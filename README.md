@@ -3,3 +3,18 @@
 A vulnerable Spring Boot test web application.
 
 Intended for use with the associated [vulnerability scanner](https://github.com/vurs/capstone-vulnerability-scanner/tree/main).
+
+### How to Deploy
+#### The following steps only need to be done once:
+1. Ensure Docker Desktop is installed on your PC and running
+2. Clone this repository to your PC and open it in IntelliJ IDEA
+3. On the right side, you will see an 'm' icon for Maven. Click it, then click the "Sync All Maven Projects" icon
+4. While still in the Maven window, click the "Execute Maven Goal" icon, and run "mvn package", "mvn install", and "mvn clean"
+
+#### The following steps need to be done every time:
+1. Open the terminal inside IntelliJ and run "docker compose up --build" to launch the Spring app and Postgres server
+2. Visit localhost:8080 in your browser to access the website
+
+### How to Shut Down
+1. If you would like database data to persist, run "docker compose down"
+2. If you want to destroy all database data for a clean reset, run "docker compose down -v"
