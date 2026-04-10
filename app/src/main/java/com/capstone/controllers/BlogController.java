@@ -19,9 +19,15 @@ public class BlogController {
     }
 
     @GetMapping("/")
-    public String home(Model model) {
-        model.addAttribute("posts", blogPostService.getAllPosts());
+    public String home() {//Model model) {
+//        model.addAttribute("posts", blogPostService.getAllPosts());
         return "index";
+    }
+
+    @GetMapping("/post-list")
+    public String viewPostList(Model model) {
+        model.addAttribute("posts", blogPostService.getAllPosts());
+        return "post-list";
     }
 
     @GetMapping("/new")
@@ -33,7 +39,7 @@ public class BlogController {
     @PostMapping("/save")
     public String savePost(@ModelAttribute("post") BlogPost blogPost) {
         blogPostService.save(blogPost);
-        return "redirect:/";
+        return "redirect:/post-list";
     }
 
     @GetMapping("/post/{id}")
