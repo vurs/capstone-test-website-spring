@@ -19,8 +19,7 @@ public class BlogController {
     }
 
     @GetMapping("/")
-    public String home() {//Model model) {
-//        model.addAttribute("posts", blogPostService.getAllPosts());
+    public String home() {
         return "index";
     }
 
