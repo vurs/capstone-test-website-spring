@@ -8,8 +8,9 @@ Intended for use with the associated [vulnerability scanner](https://github.com/
 #### The following steps only need to be done once:
 1. Ensure Docker Desktop is installed on your PC and running
 2. Clone this repository to your PC and open it in IntelliJ IDEA
-3. On the right side, you will see an 'm' icon for Maven. Click it, then click the "Sync All Maven Projects" icon
-4. While still in the Maven window, click the "Execute Maven Goal" icon, and run "mvn package", "mvn install", and "mvn clean"
+3. On the right side, you should see an 'm' icon for Maven. If not, open the "app" folder and you will see a pom.xml file. Right-click it and select "Add as Maven Project"
+4. Click the 'm' icon on the right side, then click the "Sync All Maven Projects" icon
+5. While still in the Maven window, click the "Execute Maven Goal" icon, and type "mvn clean package" and press Enter
 
 #### The following steps need to be done every time:
 1. Open the terminal inside IntelliJ and run "docker compose up --build" to launch the Spring app and Postgres server
