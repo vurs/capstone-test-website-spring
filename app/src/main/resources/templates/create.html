@@ -26,7 +26,7 @@
     </header>
 </div>
 <div class="container">
-    <form action="/save" method="post">
+    <form th:action="@{/save}" method="post">
         <div class="form-group">
             <label for="title">Post Title</label>
             <input type="text" class="form-control" id="title" name="title" placeholder="Enter post title" required/>
