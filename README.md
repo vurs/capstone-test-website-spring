@@ -13,8 +13,9 @@ Intended for use with the associated [vulnerability scanner](https://github.com/
 5. While still in the Maven window, click the "Execute Maven Goal" icon, and type "mvn clean package" and press Enter
 
 #### The following steps need to be done every time:
-1. Open the terminal inside IntelliJ and run "docker compose up --build" to launch the Spring app and Postgres server
-2. Visit localhost:8080 in your browser to access the website
+1. Open the terminal inside IntelliJ and run "docker compose up --build" to launch the Spring app, Postgres server, and Keycloak server
+2. Visit localhost:8081 in your browser to access the website
+3. All pages of the website (minus the landing page) are login-protected. If prompted to login, use the sample user (Username is "testuser" and password is "password")
 
 ### How to Shut Down
 1. If you would like database data to persist, run "docker compose down"
