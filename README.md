@@ -75,6 +75,6 @@ The following features are in progress:
 
 * [Team Jira](https://sheridan-cyber-capstone-2026.atlassian.net/jira/software/projects/SCRUM/boards/1) (Coordinate with me for access)
 * [Revised Project Plan for Phase 2](https://sheridan-cyber-capstone-2026.atlassian.net/wiki/x/AQD-AQ) (Coordinate with me for access)
-* [System Architecture Diagram]()
+* [System Architecture Diagram](https://drive.google.com/file/d/15G35238mbmTRRoIVubBf7kuU-v8xIKI9/view?usp=sharing)
 * [Repo Contributions Distribution](https://github.com/vurs/capstone-vulnerability-scanner/graphs/contributors)
 * Project demo coming soon...
