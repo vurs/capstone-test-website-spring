@@ -46,9 +46,4 @@ public class BlogController {
         model.addAttribute("post", blogPostService.getById(id));
         return "post";
     }
-
-    @GetMapping("/danger")
-    public String dangerPage() {
-        return "danger";
-    }
 }
