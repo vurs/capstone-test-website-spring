@@ -56,19 +56,20 @@ The following features have been created so far:
 * Scanner Phase 4: Report Generator
 * Reflected and Stored XSS payloads
 * Vulnerable Test Web Application to test scanner against
+* Authentication mechanism for vulnerability scanner
+* Base desktop application for vulnerability scanner
+* SQLi payloads (differential and error-based detection)
 
 ### Features Still in Progress
 
 The following features are in progress:
-* Authentication mechanism for vulnerability scanner
-* Additional payloads (SQLi, Command Injection, Security Misconfiguration, Broken Access Control, Exposed Directories and Files, Buffer Overflow, No Anti-CSRF Tokens, etc.)
-* Desktop application for vulnerability scanner
+* Additional payloads (Command Injection, Security Misconfiguration, Broken Access Control, Exposed Directories and Files, Buffer Overflow, No Anti-CSRF Tokens, etc.)
+* Increased desktop application functionality for vulnerability scanner
 * GitHub Actions Workflow for vulnerability scanner
 * AJAX/Single-Page Application (SPA) support for vulnerability scanner
 
 ### Known Issues and Limitations
 
-* Currently only scans for XSS
 * Currently only works on standard HTML-based websites, does not work on Single-Page Applications (SPAs) such as Angular or React
 
 ### Links to Relevant Documentation, Diagrams, and Demos
