@@ -21,6 +21,9 @@ public class SecurityConfig {
 //                        .requestMatchers("/users", "/users/search").permitAll()
                         .anyRequest().authenticated()
                 )
+                // Intentionally disable Spring Security's default header writer so the
+                // vulnerable test app exposes missing security headers to the scanner.
+                .headers(headers -> headers.disable())
                 .oauth2Login(Customizer.withDefaults()); // login with Keycloak
 
         return http.build();
