@@ -20,6 +20,7 @@ We aim to produce a desktop application for the scanner, where developers can ma
 
 1. Ensure Docker Desktop is installed on your PC
 2. Clone this repository to your PC and open it in IntelliJ IDEA
+3. In the repository directory, run `./dev_scripts/setup_git_hooks.sh` to configure git hooks. Branch names must include a Jira ticket ID (for example `SCRUM-123-my-branch`); commits on those branches are prefixed with the ticket ID automatically.
 
 ##### The following steps need to be done after cloning, and anytime new Maven dependencies are added to the project:
 
