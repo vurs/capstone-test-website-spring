@@ -19,6 +19,8 @@ release.properties
 
 # Sensitive Info
 .env
+.dev-env-stamp
+app/.dev-env-stamp
 
 # Cursor
 #  Cursor is an AI-powered code editor. `.cursorignore` specifies files/directories to
