@@ -60,18 +60,23 @@ The following features have been created so far:
 * Authentication mechanism for vulnerability scanner
 * Base desktop application for vulnerability scanner
 * SQLi payloads (differential and error-based detection)
+* Command injection payloads
+* Security misconfiguration checks
+* Browser-based crawler for SPA / client-rendered discovery (Selenium + headless Chrome)
+* Configurable crawl modes (`http`, `browser`, `both`) in the CLI and desktop UI
 
 ### Features Still in Progress
 
 The following features are in progress:
-* Additional payloads (Command Injection, Security Misconfiguration, Broken Access Control, Exposed Directories and Files, Buffer Overflow, No Anti-CSRF Tokens, etc.)
+* Additional payloads (Broken Access Control, Exposed Directories and Files, Buffer Overflow, No Anti-CSRF Tokens, etc.)
 * Increased desktop application functionality for vulnerability scanner
 * GitHub Actions Workflow for vulnerability scanner
-* AJAX/Single-Page Application (SPA) support for vulnerability scanner
 
 ### Known Issues and Limitations
 
-* Currently only works on standard HTML-based websites, does not work on Single-Page Applications (SPAs) such as Angular or React
+* **HTTP crawl mode** only discovers links and forms present in raw HTML responses; it does not execute client-side JavaScript.
+* **Browser crawl mode** improves discovery for SPAs (for example Angular or React), but coverage depends on how the app renders navigation, uses hash-based routing, or gates content behind complex client-side flows. Use `both` when you want traditional link discovery plus rendered-page exploration.
+* Browser and `both` modes require Google Chrome and a working Selenium/Chrome setup on the machine running the scan.
 
 ### Links to Relevant Documentation, Diagrams, and Demos
 
