@@ -22,6 +22,7 @@ We aim to produce a desktop application for the scanner, where developers can ma
 
 1. Ensure Docker Desktop is installed on your PC
 2. Clone this repository to your PC and open it in IntelliJ IDEA
+3. In the repository directory, run `./dev_scripts/setup_dev.sh` to configure git hooks and create the `.dev-env-stamp` required for local and Docker app startup. If on Windows, a popup might appear asking you what tool you want to run the script with; choose Git Bash. Branch names must include a Jira ticket ID (for example `SCRUM-123-my-branch`); commits on those branches are prefixed with the ticket ID automatically.
 
 ##### The following steps need to be done after cloning, and anytime new Maven dependencies are added to the project:
 
@@ -58,20 +59,26 @@ The following features have been created so far:
 * Scanner Phase 4: Report Generator
 * Reflected and Stored XSS payloads
 * Vulnerable Test Web Application to test scanner against
+* Authentication mechanism for vulnerability scanner
+* Base desktop application for vulnerability scanner
+* SQLi payloads (differential and error-based detection)
+* Command injection payloads
+* Security misconfiguration checks
+* Browser-based crawler for SPA / client-rendered discovery (Selenium + headless Chrome)
+* Configurable crawl modes (`http`, `browser`, `both`) in the CLI and desktop UI
 
 ### Features Still in Progress
 
 The following features are in progress:
-* Authentication mechanism for vulnerability scanner
-* Additional payloads (SQLi, Command Injection, Security Misconfiguration, Broken Access Control, Exposed Directories and Files, Buffer Overflow, No Anti-CSRF Tokens, etc.)
-* Desktop application for vulnerability scanner
+* Additional payloads (Broken Access Control, Exposed Directories and Files, Buffer Overflow, No Anti-CSRF Tokens, etc.)
+* Increased desktop application functionality for vulnerability scanner
 * GitHub Actions Workflow for vulnerability scanner
-* AJAX/Single-Page Application (SPA) support for vulnerability scanner
 
 ### Known Issues and Limitations
 
-* Currently only scans for XSS
-* Currently only works on standard HTML-based websites, does not work on Single-Page Applications (SPAs) such as Angular or React
+* **HTTP crawl mode** only discovers links and forms present in raw HTML responses; it does not execute client-side JavaScript.
+* **Browser crawl mode** improves discovery for SPAs (for example Angular or React), but coverage depends on how the app renders navigation, uses hash-based routing, or gates content behind complex client-side flows. Use `both` when you want traditional link discovery plus rendered-page exploration.
+* Browser and `both` modes require Google Chrome and a working Selenium/Chrome setup on the machine running the scan.
 
 ### Links to Relevant Documentation, Diagrams, and Demos
 
