@@ -6,6 +6,23 @@ Intended for use with the associated [vulnerability scanner](https://github.com/
 
 This app intentionally disables Spring Security's default security headers so the scanner can identify missing response headers.
 
+It also intentionally exposes several test-only routes and file-like paths so the scanner can detect exposed directories and sensitive files:
+
+* `/admin`
+* `/backup`
+* `/uploads`
+* `/config`
+* `/debug-info`
+* `/.env`
+* `/config.yml`
+* `/backup.zip`
+* `/backup.tar.gz`
+* `/db_backup.sql`
+* `/database.sql`
+* `/site.bak`
+* `/app.bak`
+* `/.git/config`
+
 ### Project Overview
 
 Our team is building a Dynamic Application Security Testing (DAST) tool to perform automated scans of web applications, inject crafted payloads, identify web vulnerabilities, and generate user-friendly reports that explain the found vulnerabilities and offer remediation recommendations.

@@ -18,6 +18,22 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PathRequest.toStaticResources().atCommonLocations()).permitAll()
                         .requestMatchers("/").permitAll()
+                        .requestMatchers(
+                                "/admin", "/admin/",
+                                "/backup", "/backup/",
+                                "/uploads", "/uploads/",
+                                "/config", "/config/",
+                                "/debug-info",
+                                "/.env",
+                                "/config.yml",
+                                "/backup.zip",
+                                "/backup.tar.gz",
+                                "/db_backup.sql",
+                                "/database.sql",
+                                "/site.bak",
+                                "/app.bak",
+                                "/.git/config"
+                        ).permitAll()
 //                        .requestMatchers("/users", "/users/search").permitAll()
                         .anyRequest().authenticated()
                 )
