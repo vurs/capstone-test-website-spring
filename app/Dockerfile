@@ -9,6 +9,8 @@ RUN mvn -B package -DskipTests
 FROM amazoncorretto:17-alpine
 WORKDIR /app
 
+RUN apk add --no-cache iputils
+
 RUN addgroup -S spring && adduser -S spring -G spring
 USER spring
 
