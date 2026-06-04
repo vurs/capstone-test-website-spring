@@ -47,36 +47,48 @@ On macOS, you may run into an issue where your browser cannot resolve "host.dock
     * 127.0.0.1       host.docker.internal
 2. Run the following CLI command to flush your DNS cache:
    * sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder
+  
+On Windows, you may run into an issue where your browser cannot resolve "host.docker.internal", thus breaking all Keycloak functionality. To fix this, you need to do the following:
+1. Add the following line to the bottom of your C:\Windows\System32\drivers\etc\hosts file, and delete the other entry for host.docker.internal:
+    * 127.0.0.1 host.docker.internal
+2. Save the file and retry the application
 
 ### Current Project Status
 
 The following features have been created so far:
-* Scanner Phase 1: Crawler/Spider
+
+* Scanner Phase 1: Crawler/Spider (HTTP and browser/Selenium modes)
 * Scanner Phase 2: Payload Injector
 * Scanner Phase 3: Vulnerability Verifier
 * Scanner Phase 4: Report Generator
 * Reflected and Stored XSS payloads
-* Vulnerable Test Web Application to test scanner against
-* Authentication mechanism for vulnerability scanner
-* Base desktop application for vulnerability scanner
-* SQLi payloads (differential and error-based detection)
+* SQL injection payloads (differential and error-based detection)
 * Command injection payloads
-* Security misconfiguration checks
-* Browser-based crawler for SPA / client-rendered discovery (Selenium + headless Chrome)
-* Configurable crawl modes (`http`, `browser`, `both`) in the CLI and desktop UI
+* Security header misconfiguration checks
+* Broken access control checks (on a feature branch)
+* Exposed directories and files checks (on a feature branch)
+* Vulnerable test web application to test scanner against
+* Authentication for HTML form login and JSON API login (SPA-friendly)
+* Session probe-based re-authentication
+* Hash-route aware browser crawling for SPAs
+* Base desktop application for vulnerability scanner
 
 ### Features Still in Progress
 
 The following features are in progress:
-* Additional payloads (Broken Access Control, Exposed Directories and Files, Buffer Overflow, No Anti-CSRF Tokens, etc.)
+
+* Additional payloads (Buffer Overflow, No Anti-CSRF Tokens, etc.)
 * Increased desktop application functionality for vulnerability scanner
-* GitHub Actions Workflow for vulnerability scanner
+* GitHub Actions Workflow for vulnerability scanner (allows scans to be run on a schedule or for important events such as PRs)
+* REST/API endpoint discovery for SPA backends (Juice Shop seeds, query-param URLs, browser network capture, OpenAPI)
+* API injection for SQLi, XSS, and command injection on discovered REST endpoints
 
 ### Known Issues and Limitations
 
-* **HTTP crawl mode** only discovers links and forms present in raw HTML responses; it does not execute client-side JavaScript.
-* **Browser crawl mode** improves discovery for SPAs (for example Angular or React), but coverage depends on how the app renders navigation, uses hash-based routing, or gates content behind complex client-side flows. Use `both` when you want traditional link discovery plus rendered-page exploration.
-* Browser and `both` modes require Google Chrome and a working Selenium/Chrome setup on the machine running the scan.
+* **Traditional HTML sites** work best with HTTP crawl mode.
+* **SPAs** require browser crawl mode to discover client-rendered routes and hash-based navigation (for example `#/about`). REST API endpoints are discovered via seeds, query parameters, browser network capture, and OpenAPI specs; injection runs against those endpoints separately from HTML forms.
+* **Session probing** is opt-in. Targets with authenticated scans should expose a probe endpoint (for example `/api/session/me`) that returns `401`/`403` when logged out, or configure `--auth-session-probe-json-field` when the probe returns `200` for both states.
+* **Browser mode** requires Selenium and Chrome. Overlays, cookie banners, and heavy client-side rendering can still limit link discovery on some apps.
 
 ### Links to Relevant Documentation, Diagrams, and Demos
 
