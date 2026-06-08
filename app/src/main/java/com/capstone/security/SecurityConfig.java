@@ -18,6 +18,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PathRequest.toStaticResources().atCommonLocations()).permitAll()
                         .requestMatchers("/").permitAll()
+                        .requestMatchers("/csrf-demo", "/csrf-demo/**").permitAll()
+                        .requestMatchers("/unsafe-forms/**").permitAll()
                         .requestMatchers(
                                 "/admin", "/admin/",
                                 "/backup", "/backup/",
@@ -40,6 +42,9 @@ public class SecurityConfig {
                 // Intentionally disable Spring Security's default header writer so the
                 // vulnerable test app exposes missing security headers to the scanner.
                 .headers(headers -> headers.disable())
+                // Intentionally skip CSRF checks for the CSRF demo endpoints so scanners
+                // can confirm unsafe forms that do not include anti-CSRF tokens.
+                .csrf(csrf -> csrf.ignoringRequestMatchers("/unsafe-forms/**"))
                 .oauth2Login(Customizer.withDefaults()); // login with Keycloak
 
         return http.build();

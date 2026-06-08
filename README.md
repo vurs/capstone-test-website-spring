@@ -6,6 +6,8 @@ Intended for use with the associated [vulnerability scanner](https://github.com/
 
 This app intentionally disables Spring Security's default security headers so the scanner can identify missing response headers.
 
+It also intentionally exposes `/csrf-demo`, which contains unsafe forms without anti-CSRF token fields. The matching `/unsafe-forms/**` endpoints skip Spring Security CSRF checks so the scanner can detect and confirm missing CSRF protection.
+
 It also intentionally exposes several test-only routes and file-like paths so the scanner can detect exposed directories and sensitive files:
 
 * `/admin`
