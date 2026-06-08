@@ -32,6 +32,7 @@ public class SecurityConfig {
                         .requestMatchers("/").permitAll()
                         // OpenAPI spec and scanner-friendly REST endpoints (no Keycloak required).
                         .requestMatchers(
+                                "/v3/api-docs",
                                 "/v3/api-docs/**",
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
