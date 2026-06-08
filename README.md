@@ -71,6 +71,14 @@ python main.py http://127.0.0.1:8081 \
 
 `POST /api/auth/login` accepts `{"username":"testuser","password":"password"}` and returns a session cookie. This is separate from Keycloak and exists only to support scanner authentication testing.
 
+**Automated regression test** (from the scanner repo, with this app running):
+
+```
+pytest --run-integration tests/integration/test_openapi_api_scan.py
+```
+
+Or: `python dev_scripts/verify_spring_api_scan.py`
+
 #### How to Shut Down
 
 1. If you would like database data to persist, run "docker compose down"
