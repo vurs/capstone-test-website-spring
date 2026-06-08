@@ -35,6 +35,42 @@ We aim to produce a desktop application for the scanner, where developers can ma
 3. Visit localhost:8081 in your browser to access the website
 4. All pages of the website (minus the landing page) are login-protected. If prompted to login, use the sample user (Username is "testuser" and password is "password")
 
+#### API-only scanner testing
+
+The app exposes OpenAPI docs and scanner-friendly REST endpoints on the same port (`8081`) as the HTML site. No separate API server is required.
+
+**OpenAPI spec:** `http://127.0.0.1:8081/v3/api-docs`
+
+**Injectable REST endpoints (intentionally vulnerable):**
+
+| Method | Path | Parameter | Vulnerability |
+|--------|------|-----------|---------------|
+| GET | `/users/search` | `username` (query) | SQL injection |
+| GET | `/network/ping` | `host` (query) | Command injection |
+
+These routes are open without Keycloak so the vulnerability scanner can reach them in `--scan-profile api` mode. HTML pages and other routes still use Keycloak login.
+
+**Unauthenticated API-only scan** (from the scanner repo):
+
+```
+python main.py http://127.0.0.1:8081 \
+  --scan-profile api \
+  --openapi-url /v3/api-docs
+```
+
+**Authenticated API-only scan** (optional JSON login for scanner tooling):
+
+```
+python main.py http://127.0.0.1:8081 \
+  --scan-profile api \
+  --openapi-url /v3/api-docs \
+  --auth-api-url /api/auth/login \
+  --auth-field username=testuser \
+  --auth-field password=password
+```
+
+`POST /api/auth/login` accepts `{"username":"testuser","password":"password"}` and returns a session cookie. This is separate from Keycloak and exists only to support scanner authentication testing.
+
 #### How to Shut Down
 
 1. If you would like database data to persist, run "docker compose down"
