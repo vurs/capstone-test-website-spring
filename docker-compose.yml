@@ -34,6 +34,9 @@ services:
       - "8081:8081"
     depends_on:
       - db
+      - keycloak
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       SPRING_PROFILES_ACTIVE: docker
 

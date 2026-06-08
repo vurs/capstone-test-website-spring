@@ -43,6 +43,12 @@ spring:
 
     database-platform: org.hibernate.dialect.PostgreSQLDialect
 
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: false
+
 logging:
   level:
     org:
