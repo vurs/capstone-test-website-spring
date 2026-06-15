@@ -4,6 +4,27 @@ A vulnerable Spring Boot test web application.
 
 Intended for use with the associated [vulnerability scanner](https://github.com/vurs/capstone-vulnerability-scanner/tree/main).
 
+This app intentionally disables Spring Security's default security headers so the scanner can identify missing response headers.
+
+It also intentionally exposes `/csrf-demo`, which contains unsafe forms without anti-CSRF token fields. The matching `/unsafe-forms/**` endpoints skip Spring Security CSRF checks so the scanner can detect and confirm missing CSRF protection.
+
+It also intentionally exposes several test-only routes and file-like paths so the scanner can detect exposed directories and sensitive files:
+
+* `/admin`
+* `/backup`
+* `/uploads`
+* `/config`
+* `/debug-info`
+* `/.env`
+* `/config.yml`
+* `/backup.zip`
+* `/backup.tar.gz`
+* `/db_backup.sql`
+* `/database.sql`
+* `/site.bak`
+* `/app.bak`
+* `/.git/config`
+
 ### Project Overview
 
 Our team is building a Dynamic Application Security Testing (DAST) tool to perform automated scans of web applications, inject crafted payloads, identify web vulnerabilities, and generate user-friendly reports that explain the found vulnerabilities and offer remediation recommendations.
@@ -20,7 +41,7 @@ We aim to produce a desktop application for the scanner, where developers can ma
 
 1. Ensure Docker Desktop is installed on your PC
 2. Clone this repository to your PC and open it in IntelliJ IDEA
-3. In the repository directory, run `./dev_scripts/setup_dev.sh` to configure git hooks and create the `.dev-env-stamp` required for local and Docker app startup. If on Windows, a popup might appear asking you what tool you want to run the script with; choose Git Bash. Branch names must include a Jira ticket ID (for example `SCRUM-123-my-branch`); commits on those branches are prefixed with the ticket ID automatically.
+3. In the repository directory, run `./dev_scripts/setup_dev.sh` to configure git hooks and create the `.dev-env-stamp` required for local and Docker app startup. On Windows PowerShell, run `.\dev_scripts\setup_dev.ps1` instead. Branch names must include a Jira ticket ID (for example `SCRUM-123-my-branch`); commits on those branches are prefixed with the ticket ID automatically.
 
 ##### The following steps need to be done after cloning, and anytime new Maven dependencies are added to the project:
 

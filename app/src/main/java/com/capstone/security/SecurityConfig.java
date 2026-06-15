@@ -25,11 +25,30 @@ public class SecurityConfig {
                 .csrf(csrf -> csrf.ignoringRequestMatchers(
                         "/api/auth/login",
                         "/users/**",
-                        "/network/**"
+                        "/network/**",
+                        "/unsafe-forms/**"
                 ))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PathRequest.toStaticResources().atCommonLocations()).permitAll()
                         .requestMatchers("/").permitAll()
+                        .requestMatchers("/csrf-demo", "/csrf-demo/**").permitAll()
+                        .requestMatchers("/unsafe-forms/**").permitAll()
+                        .requestMatchers(
+                                "/admin", "/admin/",
+                                "/backup", "/backup/",
+                                "/uploads", "/uploads/",
+                                "/config", "/config/",
+                                "/debug-info",
+                                "/.env",
+                                "/config.yml",
+                                "/backup.zip",
+                                "/backup.tar.gz",
+                                "/db_backup.sql",
+                                "/database.sql",
+                                "/site.bak",
+                                "/app.bak",
+                                "/.git/config"
+                        ).permitAll()
                         // OpenAPI spec and scanner-friendly REST endpoints (no Keycloak required).
                         .requestMatchers(
                                 "/v3/api-docs",
@@ -42,6 +61,9 @@ public class SecurityConfig {
                         ).permitAll()
                         .anyRequest().authenticated()
                 )
+                // Intentionally disable Spring Security's default header writer so the
+                // vulnerable test app exposes missing security headers to the scanner.
+                .headers(headers -> headers.disable())
                 .oauth2Login(Customizer.withDefaults()); // login with Keycloak
 
         return http.build();
