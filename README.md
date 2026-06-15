@@ -67,6 +67,7 @@ The app exposes OpenAPI docs and scanner-friendly REST endpoints on the same por
 | Method | Path | Parameter | Vulnerability |
 |--------|------|-----------|---------------|
 | GET | `/users/search` | `username` (query) | SQL injection |
+| GET | `/users/profile` | `userId` (query) | Broken access control (IDOR) |
 | GET | `/network/ping` | `host` (query) | Command injection |
 
 These routes are open without Keycloak so the vulnerability scanner can reach them in `--scan-profile api` mode. HTML pages and other routes still use Keycloak login.
@@ -130,7 +131,7 @@ The following features have been created so far:
 * SQL injection payloads (differential and error-based detection)
 * Command injection payloads
 * Security header misconfiguration checks
-* Broken access control checks (on a feature branch)
+* Broken access control checks (IDOR on `/users/profile`)
 * Exposed directories and files checks (on a feature branch)
 * Vulnerable test web application to test scanner against
 * Authentication for HTML form login and JSON API login (SPA-friendly)
