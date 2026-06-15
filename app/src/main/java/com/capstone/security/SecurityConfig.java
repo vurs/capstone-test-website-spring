@@ -7,14 +7,27 @@ import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
+import org.springframework.security.web.context.SecurityContextRepository;
 
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
 
     @Bean
+    public SecurityContextRepository securityContextRepository() {
+        return new HttpSessionSecurityContextRepository();
+    }
+
+    @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
+                .csrf(csrf -> csrf.ignoringRequestMatchers(
+                        "/api/auth/login",
+                        "/users/**",
+                        "/network/**",
+                        "/unsafe-forms/**"
+                ))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PathRequest.toStaticResources().atCommonLocations()).permitAll()
                         .requestMatchers("/").permitAll()
@@ -36,15 +49,21 @@ public class SecurityConfig {
                                 "/app.bak",
                                 "/.git/config"
                         ).permitAll()
-//                        .requestMatchers("/users", "/users/search").permitAll()
+                        // OpenAPI spec and scanner-friendly REST endpoints (no Keycloak required).
+                        .requestMatchers(
+                                "/v3/api-docs",
+                                "/v3/api-docs/**",
+                                "/swagger-ui/**",
+                                "/swagger-ui.html",
+                                "/api/auth/login",
+                                "/users/**",
+                                "/network/**"
+                        ).permitAll()
                         .anyRequest().authenticated()
                 )
                 // Intentionally disable Spring Security's default header writer so the
                 // vulnerable test app exposes missing security headers to the scanner.
                 .headers(headers -> headers.disable())
-                // Intentionally skip CSRF checks for the CSRF demo endpoints so scanners
-                // can confirm unsafe forms that do not include anti-CSRF tokens.
-                .csrf(csrf -> csrf.ignoringRequestMatchers("/unsafe-forms/**"))
                 .oauth2Login(Customizer.withDefaults()); // login with Keycloak
 
         return http.build();
