@@ -34,7 +34,9 @@ public class SecurityConfig {
                                 "/database.sql",
                                 "/site.bak",
                                 "/app.bak",
-                                "/.git/config"
+                                "/.git/config",
+                                "/error/**",
+                                "/api/error/**"
                         ).permitAll()
 //                        .requestMatchers("/users", "/users/search").permitAll()
                         .anyRequest().authenticated()
