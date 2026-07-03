@@ -25,6 +25,19 @@ It also intentionally exposes several test-only routes and file-like paths so th
 * `/app.bak`
 * `/.git/config`
 
+### AWS deployment (GitHub Actions)
+
+The app can be deployed to a hardened, low-cost EC2 instance from GitHub Actions. Terraform provisions (or replaces) the VM; Ansible hardens the host and starts the Docker stack. See [infra/README.md](infra/README.md) for secrets, IAM, and tear-down instructions.
+
+Quick use:
+
+1. Set secrets `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `ALLOWED_CIDRS` (team public IPs as `/32` CIDRs — never `0.0.0.0/0`).
+2. Run **Actions → Deploy Spring App to AWS → deploy** to create/replace the instance.
+3. Run **Actions → Deploy Spring App to AWS → destroy** to tear down without recreating.
+4. Instance details are stored in private AWS SSM (not in public Actions logs). Read them with AWS credentials — see [infra/README.md](infra/README.md).
+
+Because this repository is public, Actions logs are world-readable; the deploy/scan workflows mask sensitive values and avoid publishing IPs or URLs in the job summary.
+
 ### Project Overview
 
 Our team is building a Dynamic Application Security Testing (DAST) tool to perform automated scans of web applications, inject crafted payloads, identify web vulnerabilities, and generate user-friendly reports that explain the found vulnerabilities and offer remediation recommendations.

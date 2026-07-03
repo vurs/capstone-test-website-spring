@@ -1,0 +1,45 @@
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: vulndb
+      POSTGRES_USER: vulnuser
+      POSTGRES_PASSWORD: vulnpassword
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # Intentionally not published on the host. Reachable only on the Docker network.
+    restart: unless-stopped
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.6.1
+    command:
+      - "start-dev"
+      - "--import-realm"
+      - "--hostname=http://{{ public_host }}:{{ keycloak_port }}"
+      - "--hostname-strict=false"
+      - "--http-enabled=true"
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    volumes:
+      - ./realm-full-export.json:/opt/keycloak/data/import/realm-full-export.json
+    ports:
+      - "{{ keycloak_port }}:8080"
+    restart: unless-stopped
+
+  app:
+    build: ./app
+    ports:
+      - "{{ app_port }}:8081"
+    depends_on:
+      - db
+      - keycloak
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KEYCLOAK_ISSUER_URI: "http://{{ public_host }}:{{ keycloak_port }}/realms/test-realm"
+    restart: unless-stopped
+
+volumes:
+  pgdata:

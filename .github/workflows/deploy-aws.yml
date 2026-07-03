@@ -1,0 +1,402 @@
+# Provision (or replace) the Spring test app on a hardened EC2 instance.
+#
+# Actions:
+#   deploy  - destroy any existing managed instance, provision a new one, deploy the app
+#   destroy - tear down all managed AWS resources and do not recreate them
+#
+# Required GitHub secrets:
+#   AWS_ACCESS_KEY_ID
+#   AWS_SECRET_ACCESS_KEY
+#   ALLOWED_CIDRS          Comma-separated CIDRs for team access, e.g.
+#                         203.0.113.10/32,198.51.100.20/32
+#
+# Optional GitHub variables:
+#   AWS_REGION            default us-east-1
+#   TF_STATE_BUCKET       default capstone-spring-tfstate-<account-id>
+#
+# Public-repo note: Actions logs are world-readable. Instance details are written to
+# private AWS SSM parameters (not printed) and values are masked in the log stream.
+# Team members read them with AWS credentials (see infra/README.md).
+
+name: Deploy Spring App to AWS
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: deploy (replace instance + app) or destroy (tear down only)
+        required: true
+        type: choice
+        options:
+          - deploy
+          - destroy
+        default: deploy
+  push:
+    branches:
+      - main
+    paths:
+      - "app/**"
+      - "docker-compose.yml"
+      - "realm-full-export.json"
+      - "infra/**"
+      - ".github/workflows/deploy-aws.yml"
+
+concurrency:
+  group: capstone-spring-aws
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      AWS_DEFAULT_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      TF_DIR: infra/terraform
+      ANSIBLE_DIR: infra/ansible
+      WORK_DIR: ${{ github.workspace }}/.deploy-work
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        run: |
+          if [ -z "${{ secrets.AWS_ACCESS_KEY_ID }}" ] || [ -z "${{ secrets.AWS_SECRET_ACCESS_KEY }}" ]; then
+            echo "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY secrets are required."
+            exit 1
+          fi
+          if [ -z "${{ secrets.ALLOWED_CIDRS }}" ]; then
+            echo "ALLOWED_CIDRS secret is required (comma-separated CIDRs, no 0.0.0.0/0)."
+            exit 1
+          fi
+
+      - name: Configure AWS credentials environment
+        run: |
+          aws sts get-caller-identity
+
+      - name: Resolve action
+        id: meta
+        run: |
+          ACTION="${{ github.event.inputs.action }}"
+          if [ -z "$ACTION" ]; then
+            ACTION="deploy"
+          fi
+          echo "action=$ACTION" >> "$GITHUB_OUTPUT"
+
+      - name: Build allowlist CIDRs (team + current runner)
+        id: cidrs
+        run: |
+          set -euo pipefail
+          RUNNER_IP="$(curl -fsSL https://api.ipify.org)"
+          echo "Runner public IP: $RUNNER_IP"
+
+          # Normalize team CIDRs from the secret.
+          TEAM_CIDRS="$(echo '${{ secrets.ALLOWED_CIDRS }}' | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$')"
+          {
+            echo "$TEAM_CIDRS"
+            echo "${RUNNER_IP}/32"
+          } | sort -u > "$RUNNER_TEMP/allowed_cidrs.txt"
+
+          if grep -qx '0.0.0.0/0' "$RUNNER_TEMP/allowed_cidrs.txt" || grep -qx '::/0' "$RUNNER_TEMP/allowed_cidrs.txt"; then
+            echo "ALLOWED_CIDRS must not include 0.0.0.0/0 or ::/0."
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          import os
+          cidrs = Path(os.environ["RUNNER_TEMP"], "allowed_cidrs.txt").read_text().splitlines()
+          Path(os.environ["RUNNER_TEMP"], "allowed_cidrs.json").write_text(json.dumps(cidrs))
+          print("Allowlist:")
+          for cidr in cidrs:
+              print(f"  - {cidr}")
+          PY
+
+      - name: Ensure Terraform state bucket
+        id: backend
+        run: |
+          set -euo pipefail
+          ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+          BUCKET="${{ vars.TF_STATE_BUCKET }}"
+          if [ -z "$BUCKET" ]; then
+            BUCKET="capstone-spring-tfstate-${ACCOUNT_ID}"
+          fi
+
+          if aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null; then
+            echo "Using existing state bucket s3://$BUCKET"
+          else
+            echo "Creating state bucket s3://$BUCKET"
+            if [ "$AWS_REGION" = "us-east-1" ]; then
+              aws s3api create-bucket --bucket "$BUCKET"
+            else
+              aws s3api create-bucket \
+                --bucket "$BUCKET" \
+                --create-bucket-configuration LocationConstraint="$AWS_REGION"
+            fi
+            aws s3api put-bucket-versioning \
+              --bucket "$BUCKET" \
+              --versioning-configuration Status=Enabled
+            aws s3api put-public-access-block \
+              --bucket "$BUCKET" \
+              --public-access-block-configuration \
+              BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+            aws s3api put-bucket-encryption \
+              --bucket "$BUCKET" \
+              --server-side-encryption-configuration \
+              '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+          fi
+
+          echo "bucket=$BUCKET" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+
+      - name: Terraform init
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ steps.backend.outputs.bucket }}" \
+            -backend-config="key=capstone-spring/terraform.tfstate" \
+            -backend-config="region=${{ env.AWS_REGION }}" \
+            -backend-config="encrypt=true"
+
+      - name: Write Terraform variables
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          import os
+          cidrs = json.loads(Path(os.environ["RUNNER_TEMP"], "allowed_cidrs.json").read_text())
+          lines = [
+              f'aws_region = "{os.environ["AWS_REGION"]}"',
+              'project_name = "capstone-spring"',
+              "allowed_cidrs = " + json.dumps(cidrs),
+          ]
+          Path("ci.auto.tfvars").write_text("\n".join(lines) + "\n")
+          print(Path("ci.auto.tfvars").read_text())
+          PY
+
+      - name: Terraform destroy (tear down only)
+        if: steps.meta.outputs.action == 'destroy'
+        working-directory: ${{ env.TF_DIR }}
+        run: terraform destroy -auto-approve
+
+      - name: Terraform apply (replace any existing instance)
+        if: steps.meta.outputs.action == 'deploy'
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          set -euo pipefail
+          # If state already has an instance, force replacement so deploys are clean.
+          if terraform state list 2>/dev/null | grep -qx 'aws_instance.app'; then
+            terraform apply -auto-approve -replace=aws_instance.app
+          else
+            terraform apply -auto-approve
+          fi
+
+      - name: Export Terraform outputs
+        if: steps.meta.outputs.action == 'deploy'
+        id: tf
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$WORK_DIR"
+          PUBLIC_IP="$(terraform output -raw public_ip)"
+          APP_URL="$(terraform output -raw app_url)"
+          OPENAPI_URL="$(terraform output -raw openapi_url)"
+          KEYCLOAK_URL="$(terraform output -raw keycloak_url)"
+          INSTANCE_ID="$(terraform output -raw instance_id)"
+          SSH_HOST="$(terraform output -raw ssh_host)"
+          SG_ID="$(terraform output -raw security_group_id)"
+
+          # Mask before any step output or later log line can leak values on a public repo.
+          for value in "$PUBLIC_IP" "$APP_URL" "$OPENAPI_URL" "$KEYCLOAK_URL" \
+                       "$INSTANCE_ID" "$SSH_HOST" "$SG_ID"; do
+            echo "::add-mask::$value"
+          done
+
+          terraform output -raw ssh_private_key_pem > "$WORK_DIR/ssh_key.pem"
+          chmod 600 "$WORK_DIR/ssh_key.pem"
+
+          {
+            echo "public_ip=$PUBLIC_IP"
+            echo "app_url=$APP_URL"
+            echo "openapi_url=$OPENAPI_URL"
+            echo "keycloak_url=$KEYCLOAK_URL"
+            echo "instance_id=$INSTANCE_ID"
+            echo "ssh_host=$SSH_HOST"
+            echo "security_group_id=$SG_ID"
+            echo "has_outputs=true"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Store instance details in private SSM parameters
+        if: steps.meta.outputs.action == 'deploy' && steps.tf.outputs.has_outputs == 'true'
+        env:
+          PUBLIC_IP: ${{ steps.tf.outputs.public_ip }}
+          APP_URL: ${{ steps.tf.outputs.app_url }}
+          OPENAPI_URL: ${{ steps.tf.outputs.openapi_url }}
+          KEYCLOAK_URL: ${{ steps.tf.outputs.keycloak_url }}
+          INSTANCE_ID: ${{ steps.tf.outputs.instance_id }}
+          SSH_HOST: ${{ steps.tf.outputs.ssh_host }}
+          SG_ID: ${{ steps.tf.outputs.security_group_id }}
+        run: |
+          set -euo pipefail
+          PREFIX="/capstone-spring"
+          put_param() {
+            local name="$1"
+            local value="$2"
+            local type="$3"
+            aws ssm put-parameter \
+              --name "$name" \
+              --value "$value" \
+              --type "$type" \
+              --overwrite \
+              >/dev/null
+          }
+          put_param "$PREFIX/public_ip" "$PUBLIC_IP" SecureString
+          put_param "$PREFIX/app_url" "$APP_URL" SecureString
+          put_param "$PREFIX/openapi_url" "$OPENAPI_URL" SecureString
+          put_param "$PREFIX/keycloak_url" "$KEYCLOAK_URL" SecureString
+          put_param "$PREFIX/ssh_host" "$SSH_HOST" SecureString
+          put_param "$PREFIX/instance_id" "$INSTANCE_ID" String
+          put_param "$PREFIX/security_group_id" "$SG_ID" String
+          put_param "$PREFIX/region" "$AWS_REGION" String
+          echo "Wrote deployment details to SSM under $PREFIX/* (SecureString where sensitive)."
+
+      - name: Setup Python for Ansible
+        if: steps.meta.outputs.action == 'deploy'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Ansible
+        if: steps.meta.outputs.action == 'deploy'
+        run: pip install "ansible-core>=2.16,<2.18"
+
+      - name: Wait for SSH
+        if: steps.meta.outputs.action == 'deploy'
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 60); do
+            if ssh -i "$WORK_DIR/ssh_key.pem" \
+              -o StrictHostKeyChecking=accept-new \
+              -o UserKnownHostsFile="$WORK_DIR/known_hosts" \
+              -o ConnectTimeout=5 \
+              "${{ steps.tf.outputs.ssh_host }}" 'echo ready'; then
+              exit 0
+            fi
+            echo "Waiting for SSH ($i/60)..."
+            sleep 5
+          done
+          echo "SSH never became available"
+          exit 1
+
+      - name: Render Ansible inventory
+        if: steps.meta.outputs.action == 'deploy'
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          template = Path("infra/ansible/inventory.ini.j2").read_text()
+          rendered = (
+              template
+              .replace("{{ public_ip }}", os.environ["PUBLIC_IP"])
+              .replace("{{ ssh_key_path }}", os.environ["SSH_KEY_PATH"])
+              .replace("{{ known_hosts_path }}", os.environ["KNOWN_HOSTS_PATH"])
+          )
+          Path(os.environ["INVENTORY_PATH"]).write_text(rendered)
+          PY
+        env:
+          PUBLIC_IP: ${{ steps.tf.outputs.public_ip }}
+          SSH_KEY_PATH: ${{ env.WORK_DIR }}/ssh_key.pem
+          KNOWN_HOSTS_PATH: ${{ env.WORK_DIR }}/known_hosts
+          INVENTORY_PATH: ${{ env.WORK_DIR }}/inventory.ini
+
+      - name: Prepare application source for Ansible copy
+        if: steps.meta.outputs.action == 'deploy'
+        run: |
+          set -euo pipefail
+          mkdir -p "$WORK_DIR/app-src"
+          # Copy only what the VM needs to build and run the stack.
+          rsync -a \
+            --exclude='.git' \
+            --exclude='.github' \
+            --exclude='infra' \
+            --exclude='.deploy-work' \
+            ./ "$WORK_DIR/app-src/"
+
+      - name: Run Ansible playbook
+        if: steps.meta.outputs.action == 'deploy'
+        working-directory: ${{ env.ANSIBLE_DIR }}
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          import os
+          work = Path(os.environ["WORK_DIR"])
+          extra = {
+              "public_ip": os.environ["PUBLIC_IP"],
+              "app_source_dir": str(work / "app-src"),
+              "ssh_key_path": str(work / "ssh_key.pem"),
+              "allowed_cidrs": json.loads(Path(os.environ["RUNNER_TEMP"], "allowed_cidrs.json").read_text()),
+          }
+          (work / "extra_vars.json").write_text(json.dumps(extra))
+          PY
+          ansible-playbook \
+            -i "$WORK_DIR/inventory.ini" \
+            playbook.yml \
+            -e "@$WORK_DIR/extra_vars.json"
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: "False"
+          PUBLIC_IP: ${{ steps.tf.outputs.public_ip }}
+
+      - name: Clear SSM parameters after destroy
+        if: steps.meta.outputs.action == 'destroy'
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          PREFIX="/capstone-spring"
+          for name in public_ip app_url openapi_url keycloak_url ssh_host instance_id security_group_id region; do
+            aws ssm delete-parameter --name "$PREFIX/$name" 2>/dev/null || true
+          done
+          echo "Cleared SSM parameters under $PREFIX/*"
+
+      - name: Print deployment summary (no instance secrets)
+        if: always()
+        run: |
+          set -euo pipefail
+          echo "============================================================"
+          echo "Capstone Spring AWS deployment summary"
+          echo "============================================================"
+          echo "Action: ${{ steps.meta.outputs.action }}"
+          if [ "${{ steps.meta.outputs.action }}" = "destroy" ]; then
+            echo "All managed resources were destroyed. No instance is running."
+            echo "SSM parameters under /capstone-spring/* were cleared."
+            echo "============================================================"
+            exit 0
+          fi
+          if [ "${{ steps.tf.outputs.has_outputs }}" != "true" ]; then
+            echo "Deploy did not finish far enough to publish instance details."
+            echo "============================================================"
+            exit 0
+          fi
+          echo "Status: deploy completed."
+          echo "Region: $AWS_REGION"
+          echo "Terraform state bucket: ${{ steps.backend.outputs.bucket }}"
+          echo ""
+          echo "Instance details are intentionally omitted from this public log."
+          echo "Read them with AWS credentials, for example:"
+          echo "  aws ssm get-parameter --name /capstone-spring/app_url --with-decryption --query Parameter.Value --output text"
+          echo "  aws ssm get-parameter --name /capstone-spring/ssh_host --with-decryption --query Parameter.Value --output text"
+          echo "  aws ssm get-parameter --name /capstone-spring/instance_id --query Parameter.Value --output text"
+          echo "============================================================"
