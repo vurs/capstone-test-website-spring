@@ -76,9 +76,14 @@ jobs:
             exit 1
           fi
 
-      - name: Configure AWS credentials environment
+      - name: Verify AWS credentials
         run: |
-          aws sts get-caller-identity
+          # Do not print account/user identity on a public repository.
+          if ! aws sts get-caller-identity --output text >/dev/null 2>&1; then
+            echo "AWS credentials were rejected. Check AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY."
+            exit 1
+          fi
+          echo "AWS credentials accepted."
 
       - name: Resolve action
         id: meta
@@ -94,9 +99,10 @@ jobs:
         run: |
           set -euo pipefail
           RUNNER_IP="$(curl -fsSL https://api.ipify.org)"
-          echo "Runner public IP: $RUNNER_IP"
+          echo "::add-mask::$RUNNER_IP"
+          echo "::add-mask::${RUNNER_IP}/32"
 
-          # Normalize team CIDRs from the secret.
+          # Normalize team CIDRs from the secret (already masked by Actions).
           TEAM_CIDRS="$(echo '${{ secrets.ALLOWED_CIDRS }}' | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$')"
           {
             echo "$TEAM_CIDRS"
@@ -114,9 +120,8 @@ jobs:
           import os
           cidrs = Path(os.environ["RUNNER_TEMP"], "allowed_cidrs.txt").read_text().splitlines()
           Path(os.environ["RUNNER_TEMP"], "allowed_cidrs.json").write_text(json.dumps(cidrs))
-          print("Allowlist:")
-          for cidr in cidrs:
-              print(f"  - {cidr}")
+          # Do not print CIDRs; team entries are secrets and the runner IP is ephemeral.
+          print(f"Allowlist prepared ({len(cidrs)} CIDR entr(y/ies)).")
           PY
 
       - name: Ensure Terraform state bucket
@@ -124,33 +129,52 @@ jobs:
         run: |
           set -euo pipefail
           ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+          echo "::add-mask::$ACCOUNT_ID"
+
           BUCKET="${{ vars.TF_STATE_BUCKET }}"
           if [ -z "$BUCKET" ]; then
             BUCKET="capstone-spring-tfstate-${ACCOUNT_ID}"
           fi
+          echo "::add-mask::$BUCKET"
 
-          if aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null; then
-            echo "Using existing state bucket s3://$BUCKET"
+          if aws s3api head-bucket --bucket "$BUCKET" >/dev/null 2>&1; then
+            echo "Using existing Terraform state bucket."
           else
-            echo "Creating state bucket s3://$BUCKET"
+            echo "Creating Terraform state bucket."
+            # Redirect AWS CLI errors: AccessDenied messages include account/user ARNs.
             if [ "$AWS_REGION" = "us-east-1" ]; then
-              aws s3api create-bucket --bucket "$BUCKET"
+              if ! aws s3api create-bucket --bucket "$BUCKET" >/dev/null 2>"$RUNNER_TEMP/s3.err"; then
+                echo "Failed to create the Terraform state bucket."
+                echo "Update the IAM policy for this user (see infra/iam/capstone-spring-gha-policy.json),"
+                echo "or create the bucket once in the AWS console and re-run."
+                exit 1
+              fi
             else
-              aws s3api create-bucket \
+              if ! aws s3api create-bucket \
                 --bucket "$BUCKET" \
-                --create-bucket-configuration LocationConstraint="$AWS_REGION"
+                --create-bucket-configuration LocationConstraint="$AWS_REGION" \
+                >/dev/null 2>"$RUNNER_TEMP/s3.err"; then
+                echo "Failed to create the Terraform state bucket."
+                echo "Update the IAM policy for this user (see infra/iam/capstone-spring-gha-policy.json),"
+                echo "or create the bucket once in the AWS console and re-run."
+                exit 1
+              fi
             fi
             aws s3api put-bucket-versioning \
               --bucket "$BUCKET" \
-              --versioning-configuration Status=Enabled
+              --versioning-configuration Status=Enabled \
+              >/dev/null
             aws s3api put-public-access-block \
               --bucket "$BUCKET" \
               --public-access-block-configuration \
-              BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+              BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true \
+              >/dev/null
             aws s3api put-bucket-encryption \
               --bucket "$BUCKET" \
               --server-side-encryption-configuration \
-              '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+              '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}' \
+              >/dev/null
+            echo "Terraform state bucket created."
           fi
 
           echo "bucket=$BUCKET" >> "$GITHUB_OUTPUT"
@@ -392,7 +416,7 @@ jobs:
           fi
           echo "Status: deploy completed."
           echo "Region: $AWS_REGION"
-          echo "Terraform state bucket: ${{ steps.backend.outputs.bucket }}"
+          echo "Terraform state bucket: configured (name omitted from public logs)."
           echo ""
           echo "Instance details are intentionally omitted from this public log."
           echo "Read them with AWS credentials, for example:"

@@ -28,7 +28,9 @@ Optional repository **Variables**:
 | `AWS_REGION` | `us-east-1` |
 | `TF_STATE_BUCKET` | `capstone-spring-tfstate-<account-id>` (created automatically) |
 
-IAM policy needs at least: `ec2:*` on the instance/SG/EIP/key pair resources (or broader for a capstone account), `s3:*` on the state bucket, `ssm:PutParameter` / `GetParameter` / `DeleteParameter` on `/capstone-spring/*`, and `sts:GetCallerIdentity`.
+Attach the managed policy document in [`iam/capstone-spring-gha-policy.json`](iam/capstone-spring-gha-policy.json) to the GitHub Actions IAM user.
+
+**Important:** `s3:CreateBucket` must be allowed on `Resource: "*"` (see `S3CreateStateBucket` in that file). Scoping `CreateBucket` only to `arn:aws:s3:::capstone-spring-tfstate-*` is often denied by IAM even when the name matches. If deploy fails creating the state bucket, edit the existing policy in IAM → Policies → your policy → **Edit** → replace the JSON with that file → **Save changes**, then re-run the workflow.
 
 ## Workflows
 
