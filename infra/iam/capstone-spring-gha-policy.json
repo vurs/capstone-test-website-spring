@@ -32,37 +32,10 @@
       "Resource": "*"
     },
     {
-      "Sid": "S3CreateStateBucket",
-      "Effect": "Allow",
-      "Action": [
-        "s3:CreateBucket",
-        "s3:ListAllMyBuckets"
-      ],
-      "Resource": "*"
-    },
-    {
       "Sid": "S3TerraformStateAndReports",
       "Effect": "Allow",
-      "Action": [
-        "s3:ListBucket",
-        "s3:GetBucketLocation",
-        "s3:GetBucketVersioning",
-        "s3:PutBucketVersioning",
-        "s3:GetBucketPublicAccessBlock",
-        "s3:PutBucketPublicAccessBlock",
-        "s3:GetEncryptionConfiguration",
-        "s3:PutEncryptionConfiguration",
-        "s3:GetBucketAcl",
-        "s3:PutBucketAcl",
-        "s3:ListBucketVersions",
-        "s3:GetObject",
-        "s3:PutObject",
-        "s3:DeleteObject"
-      ],
-      "Resource": [
-        "arn:aws:s3:::capstone-spring-tfstate-*",
-        "arn:aws:s3:::capstone-spring-tfstate-*/*"
-      ]
+      "Action": "s3:*",
+      "Resource": "*"
     },
     {
       "Sid": "SsmDeploymentDetails",

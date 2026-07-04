@@ -28,9 +28,26 @@ Optional repository **Variables**:
 | `AWS_REGION` | `us-east-1` |
 | `TF_STATE_BUCKET` | `capstone-spring-tfstate-<account-id>` (created automatically) |
 
-Attach the managed policy document in [`iam/capstone-spring-gha-policy.json`](iam/capstone-spring-gha-policy.json) to the GitHub Actions IAM user.
+Attach the managed policy document in [`iam/capstone-spring-gha-policy.json`](iam/capstone-spring-gha-policy.json) to the GitHub Actions IAM user (`capstone-spring-gha`).
 
-**Important:** `s3:CreateBucket` must be allowed on `Resource: "*"` (see `S3CreateStateBucket` in that file). Scoping `CreateBucket` only to `arn:aws:s3:::capstone-spring-tfstate-*` is often denied by IAM even when the name matches. If deploy fails creating the state bucket, edit the existing policy in IAM → Policies → your policy → **Edit** → replace the JSON with that file → **Save changes**, then re-run the workflow.
+That policy grants `s3:*` on `*` for this dedicated CI user so Terraform state bucket create/head/list/put all work. Tighten later if you want.
+
+If the state-bucket step fails with **403** after you created the bucket manually:
+
+1. IAM → Users → `capstone-spring-gha` → **Permissions** — confirm the policy is **Attached** (not only created).
+2. IAM → Policies → your policy → **Edit** → replace JSON with `infra/iam/capstone-spring-gha-policy.json` → **Save changes**.
+3. Set repository variable `TF_STATE_BUCKET` to the **exact** bucket name from the S3 console (must match character-for-character).
+4. Locally verify with the same access keys:
+
+```bash
+export AWS_ACCESS_KEY_ID=...
+export AWS_SECRET_ACCESS_KEY=...
+export AWS_DEFAULT_REGION=us-east-1
+aws s3api head-bucket --bucket YOUR_EXACT_BUCKET_NAME
+aws s3api list-objects-v2 --bucket YOUR_EXACT_BUCKET_NAME --max-items 1
+```
+
+Both commands must succeed before the workflow will.
 
 ## Workflows
 

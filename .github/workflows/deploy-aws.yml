@@ -137,44 +137,74 @@ jobs:
           fi
           echo "::add-mask::$BUCKET"
 
-          if aws s3api head-bucket --bucket "$BUCKET" >/dev/null 2>&1; then
+          HEAD_ERR="$RUNNER_TEMP/head-bucket.err"
+          set +e
+          aws s3api head-bucket --bucket "$BUCKET" >/dev/null 2>"$HEAD_ERR"
+          HEAD_CODE=$?
+          set -e
+
+          if [ "$HEAD_CODE" -eq 0 ]; then
             echo "Using existing Terraform state bucket."
-          else
+          elif grep -qiE '404|Not Found|NoSuchBucket' "$HEAD_ERR"; then
             echo "Creating Terraform state bucket."
-            # Redirect AWS CLI errors: AccessDenied messages include account/user ARNs.
+            CREATE_ERR="$RUNNER_TEMP/create-bucket.err"
+            set +e
             if [ "$AWS_REGION" = "us-east-1" ]; then
-              if ! aws s3api create-bucket --bucket "$BUCKET" >/dev/null 2>"$RUNNER_TEMP/s3.err"; then
+              aws s3api create-bucket --bucket "$BUCKET" >/dev/null 2>"$CREATE_ERR"
+            else
+              aws s3api create-bucket \
+                --bucket "$BUCKET" \
+                --create-bucket-configuration LocationConstraint="$AWS_REGION" \
+                >/dev/null 2>"$CREATE_ERR"
+            fi
+            CREATE_CODE=$?
+            set -e
+
+            if [ "$CREATE_CODE" -ne 0 ]; then
+              if grep -qiE 'BucketAlreadyOwnedByYou|BucketAlreadyExists' "$CREATE_ERR"; then
+                echo "Bucket already exists; continuing."
+              else
                 echo "Failed to create the Terraform state bucket."
-                echo "Update the IAM policy for this user (see infra/iam/capstone-spring-gha-policy.json),"
-                echo "or create the bucket once in the AWS console and re-run."
+                echo "Replace the IAM user policy with infra/iam/capstone-spring-gha-policy.json and confirm it is attached to capstone-spring-gha."
+                echo "If the bucket already exists under a different name, set repository variable TF_STATE_BUCKET to that exact name."
                 exit 1
               fi
             else
-              if ! aws s3api create-bucket \
+              aws s3api put-bucket-versioning \
                 --bucket "$BUCKET" \
-                --create-bucket-configuration LocationConstraint="$AWS_REGION" \
-                >/dev/null 2>"$RUNNER_TEMP/s3.err"; then
-                echo "Failed to create the Terraform state bucket."
-                echo "Update the IAM policy for this user (see infra/iam/capstone-spring-gha-policy.json),"
-                echo "or create the bucket once in the AWS console and re-run."
-                exit 1
-              fi
+                --versioning-configuration Status=Enabled \
+                >/dev/null
+              aws s3api put-public-access-block \
+                --bucket "$BUCKET" \
+                --public-access-block-configuration \
+                BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true \
+                >/dev/null
+              aws s3api put-bucket-encryption \
+                --bucket "$BUCKET" \
+                --server-side-encryption-configuration \
+                '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}' \
+                >/dev/null
+              echo "Terraform state bucket created."
             fi
-            aws s3api put-bucket-versioning \
-              --bucket "$BUCKET" \
-              --versioning-configuration Status=Enabled \
-              >/dev/null
-            aws s3api put-public-access-block \
-              --bucket "$BUCKET" \
-              --public-access-block-configuration \
-              BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true \
-              >/dev/null
-            aws s3api put-bucket-encryption \
-              --bucket "$BUCKET" \
-              --server-side-encryption-configuration \
-              '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}' \
-              >/dev/null
-            echo "Terraform state bucket created."
+          elif grep -qiE '403|Forbidden|AccessDenied' "$HEAD_ERR"; then
+            echo "Cannot access the Terraform state bucket (HTTP 403)."
+            echo "The bucket may exist, but this IAM user cannot HeadBucket/ListBucket it."
+            echo "1. Attach infra/iam/capstone-spring-gha-policy.json to capstone-spring-gha (s3:*)."
+            echo "2. Confirm the bucket name is exactly capstone-spring-tfstate-<account-id>,"
+            echo "   or set repository variable TF_STATE_BUCKET to the exact bucket name you created."
+            echo "3. Confirm there is no bucket policy denying this user."
+            exit 1
+          else
+            echo "Could not check the Terraform state bucket (unexpected AWS CLI error)."
+            echo "Replace the IAM user policy with infra/iam/capstone-spring-gha-policy.json and re-run."
+            exit 1
+          fi
+
+          # Final access check used by Terraform (object read/write).
+          if ! aws s3api list-objects-v2 --bucket "$BUCKET" --max-items 1 >/dev/null 2>"$RUNNER_TEMP/list.err"; then
+            echo "Bucket is reachable for HeadBucket but not for ListObjects."
+            echo "Attach infra/iam/capstone-spring-gha-policy.json (includes s3:*) and re-run."
+            exit 1
           fi
 
           echo "bucket=$BUCKET" >> "$GITHUB_OUTPUT"
