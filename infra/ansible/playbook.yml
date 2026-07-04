@@ -194,34 +194,36 @@
       until: keycloak_ready is succeeded
       ignore_errors: true
 
-    - name: Wait for Spring port to accept connections
+    # Recreate the app container after Keycloak is actually ready so Spring's
+    # startup-time issuer fetch does not race Keycloak realm import.
+    - name: Restart Spring app after Keycloak is ready
       when: keycloak_ready is succeeded
-      ansible.builtin.wait_for:
-        host: 127.0.0.1
-        port: "{{ app_port }}"
-        delay: 2
-        timeout: 90
-      register: port_wait
+      ansible.builtin.command:
+        cmd: docker compose -f docker-compose.aws.yml up -d --force-recreate --no-deps app
+        chdir: "{{ app_dir }}"
+      register: app_recreate
       ignore_errors: true
 
-    # Healthy stack answers well under 2 minutes after Keycloak is up. Fail fast
-    # with container logs instead of sitting on a 10-minute retry budget.
+    # curl tolerates connection-reset during JVM startup better than a single uri probe.
+    # Budget: ~2 minutes after recreate (24 * 5s).
     - name: Wait for Spring OpenAPI endpoint
-      when: keycloak_ready is succeeded and port_wait is succeeded
-      ansible.builtin.uri:
-        url: "http://127.0.0.1:{{ app_port }}/v3/api-docs"
-        status_code: 200
-        return_content: false
+      when: keycloak_ready is succeeded and app_recreate is succeeded
+      ansible.builtin.command:
+        cmd: >-
+          curl -fsS --max-time 5
+          http://127.0.0.1:{{ app_port }}/v3/api-docs
+          -o /dev/null
       register: openapi_check
-      retries: 12
+      retries: 24
       delay: 5
-      until: openapi_check is succeeded
+      until: openapi_check.rc == 0
+      changed_when: false
       ignore_errors: true
 
     - name: Collect container diagnostics when the stack is not ready
       when: >-
         keycloak_ready is failed
-        or port_wait is failed
+        or app_recreate is failed
         or openapi_check is failed
         or openapi_check is skipped
       ansible.builtin.shell: |
@@ -229,28 +231,32 @@
         echo "=== docker compose ps ==="
         docker compose -f docker-compose.aws.yml ps -a
         echo "=== app logs (tail) ==="
-        docker compose -f docker-compose.aws.yml logs --tail=80 app || true
+        docker compose -f docker-compose.aws.yml logs --tail=120 app || true
         echo "=== keycloak logs (tail) ==="
-        docker compose -f docker-compose.aws.yml logs --tail=40 keycloak || true
+        docker compose -f docker-compose.aws.yml logs --tail=60 keycloak || true
         echo "=== db logs (tail) ==="
         docker compose -f docker-compose.aws.yml logs --tail=20 db || true
+        echo "=== free memory ==="
+        free -h || true
       args:
         chdir: "{{ app_dir }}"
+        executable: /bin/bash
       changed_when: false
 
     - name: Fail when OpenAPI did not become ready
       when: >-
         keycloak_ready is failed
-        or port_wait is failed
+        or app_recreate is failed
         or openapi_check is failed
         or openapi_check is skipped
       ansible.builtin.fail:
         msg: >-
           Application stack was not ready within the wait budget
           (keycloak={{ 'ok' if keycloak_ready is succeeded else 'failed' }},
-          port={{ 'ok' if port_wait is succeeded else ('skipped' if port_wait is skipped else 'failed') }},
+          app_recreate={{ 'ok' if app_recreate is succeeded else ('skipped' if app_recreate is skipped else 'failed') }},
           openapi={{ 'ok' if openapi_check is succeeded else ('skipped' if openapi_check is skipped else 'failed') }}).
           Container diagnostics were printed in the previous task.
+
 
     - name: Confirm application is healthy
       ansible.builtin.debug:
