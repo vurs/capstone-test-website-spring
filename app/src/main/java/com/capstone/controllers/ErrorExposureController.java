@@ -45,6 +45,12 @@ public class ErrorExposureController {
                     <body>
                         <b>Fatal error</b>: Uncaught Exception in /var/www/html/index.php on line 12
                         <pre>PDOException: SQLSTATE[42000]: Syntax error or access violation</pre>
+                        <pre>
+                        password=php-error-mask-test
+                        api_key=php-error-api-key-mask-test
+                        Cookie: PHPSESSID=php-mask-test-session; session_id=php-error-session-mask-test
+                        Authorization: Bearer php-error-bearer-mask-test
+                        </pre>
                         <p>Illuminate\\Database\\QueryException</p>
                         <p>Whoops, looks like something went wrong</p>
                     </body>
@@ -62,6 +68,12 @@ public class ErrorExposureController {
                         <p>Exception Type: ValueError</p>
                         <p>Exception Value: invalid literal for int() with base 10: 'demo'</p>
                         <p>DEBUG = True</p>
+                        <pre>
+                        token=django-debug-token-mask-test
+                        session_id=django-debug-session-mask-test
+                        api_key=django-debug-api-key-mask-test
+                        Authorization: Bearer django-debug-bearer-mask-test
+                        </pre>
                         <pre>Traceback (most recent call last):
                   File "/app/main.py", line 42, in index
                     raise ValueError("demo")</pre>
@@ -96,6 +108,12 @@ public class ErrorExposureController {
                 ActionController::StatementInvalid
                 ActiveRecord::StatementInvalid
                 Rails.root: /srv/app/current
+                password=database-error-mask-test
+                token=database-error-token-mask-test
+                session_id=database-error-session-mask-test
+                api_key=database-error-api-key-mask-test
+                Cookie: db_debug=enabled; session_id=database-error-cookie-mask-test
+                Authorization: Bearer database-error-bearer-mask-test
                 """);
     }
 
@@ -108,6 +126,11 @@ public class ErrorExposureController {
                   "error": "Internal Server Error",
                   "message": "SQLSTATE[42601]: syntax error at or near \\"FROM\\"",
                   "trace": "at com.example.demo.UserController.getUser(UserController.java:27)\\n at org.springframework.web.servlet.FrameworkServlet.processRequest(FrameworkServlet.java:1014)",
+                  "debug": "password=api-error-mask-test api_key=api-error-api-key-mask-test token=api-error-token-mask-test session_id=api-error-session-mask-test",
+                  "headers": [
+                    "Cookie: api_debug=enabled; session_id=api-error-cookie-mask-test",
+                    "Authorization: Bearer api-error-bearer-mask-test"
+                  ],
                   "path": "/api/error/users"
                 }
                 """);

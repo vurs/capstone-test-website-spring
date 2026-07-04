@@ -29,6 +29,8 @@ It also intentionally exposes several test-only routes and file-like paths so th
 
 The masking sample routes and existing exposed config routes include fake sensitive-looking values such as `password=...`, `token=...`, `session_id=...`, `api_key=...`, `Cookie: ...`, `Authorization: Bearer ...`, and common standalone API key formats. They are intentionally present so the scanner's report-layer data masking can be verified safely.
 
+For report-level masking checks, the strongest fixtures are `/error/php-error?session_id=php-url-session-mask-test&api_key=php-url-api-key-mask-test&token=php-url-token-mask-test` and `/api/error/users?session_id=api-url-session-mask-test&api_key=api-url-api-key-mask-test&token=api-url-token-mask-test`. These routes should produce error exposure findings with maskable values in both the finding URL and response evidence.
+
 ### Project Overview
 
 Our team is building a Dynamic Application Security Testing (DAST) tool to perform automated scans of web applications, inject crafted payloads, identify web vulnerabilities, and generate user-friendly reports that explain the found vulnerabilities and offer remediation recommendations.
