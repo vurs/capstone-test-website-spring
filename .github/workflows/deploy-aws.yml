@@ -238,13 +238,122 @@ jobs:
               "allowed_cidrs = " + json.dumps(cidrs),
           ]
           Path("ci.auto.tfvars").write_text("\n".join(lines) + "\n")
-          print(Path("ci.auto.tfvars").read_text())
+          print(f"Wrote ci.auto.tfvars ({len(cidrs)} allowlist CIDR(s)).")
           PY
+
+      # Resources can exist in AWS from a failed/partial run while missing from
+      # Terraform state. Recreating them then fails with Duplicate errors.
+      - name: Reconcile AWS resources missing from Terraform state
+        working-directory: ${{ env.TF_DIR }}
+        run: |
+          set -euo pipefail
+          PROJECT=capstone-spring
+          in_state() {
+            terraform state list 2>/dev/null | grep -qx "$1"
+          }
+
+          if ! in_state 'aws_instance.app'; then
+            mapfile -t INSTANCE_IDS < <(
+              aws ec2 describe-instances \
+                --filters \
+                  "Name=tag:Name,Values=${PROJECT}" \
+                  "Name=instance-state-name,Values=pending,running,stopping,stopped" \
+                --query 'Reservations[].Instances[].InstanceId' \
+                --output text | tr '\t' '\n' | grep -v '^$' || true
+            )
+            if [ "${#INSTANCE_IDS[@]}" -gt 0 ]; then
+              echo "Terminating orphaned instance(s) not tracked in state."
+              aws ec2 terminate-instances --instance-ids "${INSTANCE_IDS[@]}" >/dev/null
+              aws ec2 wait instance-terminated --instance-ids "${INSTANCE_IDS[@]}"
+            fi
+          fi
+
+          if ! in_state 'aws_eip.app'; then
+            mapfile -t ALLOCATION_IDS < <(
+              aws ec2 describe-addresses \
+                --filters "Name=tag:Name,Values=${PROJECT}-eip" \
+                --query 'Addresses[].AllocationId' \
+                --output text | tr '\t' '\n' | grep -v '^$' || true
+            )
+            for allocation_id in "${ALLOCATION_IDS[@]:-}"; do
+              [ -z "$allocation_id" ] && continue
+              echo "Releasing orphaned Elastic IP not tracked in state."
+              assoc_id="$(
+                aws ec2 describe-addresses \
+                  --allocation-ids "$allocation_id" \
+                  --query 'Addresses[0].AssociationId' \
+                  --output text
+              )"
+              if [ -n "$assoc_id" ] && [ "$assoc_id" != "None" ]; then
+                aws ec2 disassociate-address --association-id "$assoc_id" >/dev/null || true
+              fi
+              aws ec2 release-address --allocation-id "$allocation_id" >/dev/null || true
+            done
+          fi
+
+          if ! in_state 'aws_security_group.app'; then
+            mapfile -t SG_IDS < <(
+              aws ec2 describe-security-groups \
+                --filters "Name=group-name,Values=${PROJECT}-sg" \
+                --query 'SecurityGroups[].GroupId' \
+                --output text | tr '\t' '\n' | grep -v '^$' || true
+            )
+            for sg_id in "${SG_IDS[@]:-}"; do
+              [ -z "$sg_id" ] && continue
+              echo "Deleting orphaned security group not tracked in state."
+              # Retry briefly in case ENIs are still detaching after instance terminate.
+              for _ in $(seq 1 12); do
+                if aws ec2 delete-security-group --group-id "$sg_id" >/dev/null 2>&1; then
+                  break
+                fi
+                sleep 5
+              done
+            done
+          fi
+
+          if ! in_state 'aws_key_pair.app'; then
+            if aws ec2 describe-key-pairs --key-names "${PROJECT}-key" >/dev/null 2>&1; then
+              echo "Deleting orphaned key pair not tracked in state."
+              aws ec2 delete-key-pair --key-name "${PROJECT}-key" >/dev/null
+            fi
+          fi
+
+          echo "AWS/Terraform reconcile complete."
 
       - name: Terraform destroy (tear down only)
         if: steps.meta.outputs.action == 'destroy'
         working-directory: ${{ env.TF_DIR }}
-        run: terraform destroy -auto-approve
+        run: |
+          set -euo pipefail
+          terraform destroy -auto-approve
+          # If state was empty/partial, reconcile already removed orphans above;
+          # run it once more in case destroy left anything behind.
+          PROJECT=capstone-spring
+          aws ec2 describe-instances \
+            --filters \
+              "Name=tag:Name,Values=${PROJECT}" \
+              "Name=instance-state-name,Values=pending,running,stopping,stopped" \
+            --query 'Reservations[].Instances[].InstanceId' \
+            --output text | tr '\t' '\n' | grep -v '^$' | while read -r id; do
+              aws ec2 terminate-instances --instance-ids "$id" >/dev/null || true
+            done
+          aws ec2 describe-addresses \
+            --filters "Name=tag:Name,Values=${PROJECT}-eip" \
+            --query 'Addresses[].AllocationId' \
+            --output text | tr '\t' '\n' | grep -v '^$' | while read -r allocation_id; do
+              assoc_id="$(aws ec2 describe-addresses --allocation-ids "$allocation_id" --query 'Addresses[0].AssociationId' --output text)"
+              if [ -n "$assoc_id" ] && [ "$assoc_id" != "None" ]; then
+                aws ec2 disassociate-address --association-id "$assoc_id" >/dev/null || true
+              fi
+              aws ec2 release-address --allocation-id "$allocation_id" >/dev/null || true
+            done
+          aws ec2 describe-security-groups \
+            --filters "Name=group-name,Values=${PROJECT}-sg" \
+            --query 'SecurityGroups[].GroupId' \
+            --output text | tr '\t' '\n' | grep -v '^$' | while read -r sg_id; do
+              aws ec2 delete-security-group --group-id "$sg_id" >/dev/null || true
+            done
+          aws ec2 delete-key-pair --key-name "${PROJECT}-key" >/dev/null 2>&1 || true
 
       - name: Terraform apply (replace any existing instance)
         if: steps.meta.outputs.action == 'deploy'
