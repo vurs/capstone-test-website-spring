@@ -48,6 +48,7 @@ public class ExposedResourceController {
                 application.yml
                 config.yml
                 .env
+                masking-samples.txt
                 """;
     }
 
@@ -57,7 +58,17 @@ public class ExposedResourceController {
                 "application", "capstone-test-website-spring",
                 "environment", "test",
                 "debug", true,
-                "database", "jdbc:postgresql://postgres:5432/capstone"
+                "database", "jdbc:postgresql://postgres:5432/capstone",
+                "sampleCredentials", Map.of(
+                        "password", "debug-password-for-mask-test",
+                        "token", "ghp_debugTokenForMasking1234567890abcdef",
+                        "session_id", "sess_debugMaskingSample1234567890",
+                        "api_key", "sk_test_debugMaskingSample1234567890"
+                ),
+                "capturedHeaders", List.of(
+                        "Cookie: JSESSIONID=debug-session-cookie; session_id=sess_cookieMaskingSample123",
+                        "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.masking.sample"
+                )
         );
     }
 
@@ -68,6 +79,12 @@ public class ExposedResourceController {
                 POSTGRES_USER=capstone_user
                 POSTGRES_PASSWORD=capstone_password
                 KEYCLOAK_CLIENT_SECRET=test-client-secret
+                password=env-password-for-mask-test
+                token=ghp_envMaskingSample1234567890abcdef
+                session_id=sess_envMaskingSample1234567890
+                api_key=sk_test_envMaskingSample1234567890
+                Cookie: tracking_id=masking-demo; session_id=sess_cookieMaskingSample456
+                Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.env.masking
                 """;
     }
 
@@ -79,6 +96,31 @@ public class ExposedResourceController {
                     url: jdbc:postgresql://postgres:5432/capstone
                     username: capstone_user
                     password: capstone_password
+                  integrations:
+                    github_token: ghp_configMaskingSample1234567890abcdef
+                    api_key: sk_test_configMaskingSample1234567890
+                    session_id: sess_configMaskingSample1234567890
+                  outbound_headers:
+                    cookie: "Cookie: preview_id=masking-demo; session_id=sess_configCookieMaskingSample"
+                    authorization: "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.config.masking"
+                """;
+    }
+
+    @GetMapping(value = {"/masking-samples", "/masking-samples.txt"}, produces = MediaType.TEXT_PLAIN_VALUE)
+    public String maskingSamples() {
+        return """
+                # Intentionally exposed fake secrets for report-layer masking tests
+                password=correct-horse-mask-test
+                token=ghp_maskingSample1234567890abcdefABCDEF
+                session_id=sess_maskingSample1234567890abcdef
+                api_key=sk_test_maskingSample1234567890abcdef
+                Cookie: JSESSIONID=masking-demo-session; session_id=sess_cookieMaskingSample789
+                Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.masking.sample
+
+                # Common standalone key-looking values
+                AKIAIOSFODNN7EXAMPLE
+                AIzaSyA1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q
+                xoxb-mask-test-token-redacted-before-push-protection
                 """;
     }
 

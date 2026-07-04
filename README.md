@@ -17,6 +17,8 @@ It also intentionally exposes several test-only routes and file-like paths so th
 * `/debug-info`
 * `/.env`
 * `/config.yml`
+* `/masking-samples`
+* `/masking-samples.txt`
 * `/backup.zip`
 * `/backup.tar.gz`
 * `/db_backup.sql`
@@ -24,6 +26,8 @@ It also intentionally exposes several test-only routes and file-like paths so th
 * `/site.bak`
 * `/app.bak`
 * `/.git/config`
+
+The masking sample routes and existing exposed config routes include fake sensitive-looking values such as `password=...`, `token=...`, `session_id=...`, `api_key=...`, `Cookie: ...`, `Authorization: Bearer ...`, and common standalone API key formats. They are intentionally present so the scanner's report-layer data masking can be verified safely.
 
 ### Project Overview
 

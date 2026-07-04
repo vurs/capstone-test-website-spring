@@ -28,6 +28,8 @@ public class SecurityConfig {
                                 "/debug-info",
                                 "/.env",
                                 "/config.yml",
+                                "/masking-samples",
+                                "/masking-samples.txt",
                                 "/backup.zip",
                                 "/backup.tar.gz",
                                 "/db_backup.sql",
