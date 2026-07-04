@@ -325,7 +325,31 @@ jobs:
         working-directory: ${{ env.TF_DIR }}
         run: |
           set -euo pipefail
-          terraform destroy -auto-approve
+          # Terraform plans print public IPs, instance IDs, and prior runner CIDRs.
+          # Keep the full log private to the runner; only emit a redacted snippet on failure.
+          run_tf() {
+            local log="$RUNNER_TEMP/terraform.log"
+            if "$@" >"$log" 2>&1; then
+              echo "Terraform command completed."
+              return 0
+            fi
+            echo "Terraform command failed. Redacted log (IPv4 addresses and common IDs removed):"
+            sed -E \
+              -e 's/[0-9]{1,3}(\.[0-9]{1,3}){3}/***/g' \
+              -e 's/i-[0-9a-f]+/***/g' \
+              -e 's/sg-[0-9a-f]+/***/g' \
+              -e 's/eipalloc-[0-9a-f]+/***/g' \
+              -e 's/eipassoc-[0-9a-f]+/***/g' \
+              -e 's/eni-[0-9a-f]+/***/g' \
+              -e 's/vol-[0-9a-f]+/***/g' \
+              -e 's/vpc-[0-9a-f]+/***/g' \
+              -e 's/subnet-[0-9a-f]+/***/g' \
+              -e 's/ami-[0-9a-f]+/***/g' \
+              "$log" | tail -n 80
+            return 1
+          }
+
+          run_tf terraform destroy -auto-approve -no-color
           # If state was empty/partial, reconcile already removed orphans above;
           # run it once more in case destroy left anything behind.
           PROJECT=capstone-spring
@@ -360,11 +384,35 @@ jobs:
         working-directory: ${{ env.TF_DIR }}
         run: |
           set -euo pipefail
+          # Terraform plans print public IPs, instance IDs, and prior runner CIDRs.
+          # Keep the full log private to the runner; only emit a redacted snippet on failure.
+          run_tf() {
+            local log="$RUNNER_TEMP/terraform.log"
+            if "$@" >"$log" 2>&1; then
+              echo "Terraform apply completed."
+              return 0
+            fi
+            echo "Terraform apply failed. Redacted log (IPv4 addresses and common IDs removed):"
+            sed -E \
+              -e 's/[0-9]{1,3}(\.[0-9]{1,3}){3}/***/g' \
+              -e 's/i-[0-9a-f]+/***/g' \
+              -e 's/sg-[0-9a-f]+/***/g' \
+              -e 's/eipalloc-[0-9a-f]+/***/g' \
+              -e 's/eipassoc-[0-9a-f]+/***/g' \
+              -e 's/eni-[0-9a-f]+/***/g' \
+              -e 's/vol-[0-9a-f]+/***/g' \
+              -e 's/vpc-[0-9a-f]+/***/g' \
+              -e 's/subnet-[0-9a-f]+/***/g' \
+              -e 's/ami-[0-9a-f]+/***/g' \
+              "$log" | tail -n 80
+            return 1
+          }
+
           # If state already has an instance, force replacement so deploys are clean.
           if terraform state list 2>/dev/null | grep -qx 'aws_instance.app'; then
-            terraform apply -auto-approve -replace=aws_instance.app
+            run_tf terraform apply -auto-approve -no-color -replace=aws_instance.app
           else
-            terraform apply -auto-approve
+            run_tf terraform apply -auto-approve -no-color
           fi
 
       - name: Export Terraform outputs
