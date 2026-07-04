@@ -1,0 +1,207 @@
+---
+- name: Harden host and deploy Capstone Spring test app
+  hosts: app
+  become: true
+  vars:
+    app_dir: /opt/capstone-spring
+    public_host: "{{ public_ip }}"
+    app_port: 8081
+    keycloak_port: 8080
+
+  tasks:
+    - name: Wait for cloud-init to finish
+      ansible.builtin.command: cloud-init status --wait
+      changed_when: false
+      failed_when: false
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install base packages
+      ansible.builtin.apt:
+        name:
+          - ufw
+          - fail2ban
+          - unattended-upgrades
+          - apt-listchanges
+          - curl
+          - ca-certificates
+          - gnupg
+        state: present
+
+    - name: Configure unattended upgrades
+      ansible.builtin.copy:
+        dest: /etc/apt/apt.conf.d/20auto-upgrades
+        mode: "0644"
+        content: |
+          APT::Periodic::Update-Package-Lists "1";
+          APT::Periodic::Unattended-Upgrade "1";
+          APT::Periodic::AutocleanInterval "7";
+
+    - name: Harden SSH daemon
+      ansible.builtin.blockinfile:
+        path: /etc/ssh/sshd_config
+        marker: "# {mark} CAPSTONE HARDENING"
+        block: |
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          ChallengeResponseAuthentication no
+          PermitRootLogin no
+          X11Forwarding no
+          AllowTcpForwarding no
+          AllowUsers ubuntu
+          AuthenticationMethods publickey
+      notify: Restart ssh
+
+    - name: Configure fail2ban for SSH
+      ansible.builtin.copy:
+        dest: /etc/fail2ban/jail.d/sshd.local
+        mode: "0644"
+        content: |
+          [sshd]
+          enabled = true
+          port = ssh
+          filter = sshd
+          logpath = /var/log/auth.log
+          maxretry = 5
+          bantime = 1h
+      notify: Restart fail2ban
+
+    - name: Reset and configure UFW defaults
+      ansible.builtin.shell: |
+        set -euo pipefail
+        ufw --force reset
+        ufw default deny incoming
+        ufw default allow outgoing
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    # Port allow rules are intentionally not CIDR-scoped in UFW. The EC2 security
+    # group is the source-IP allowlist (team CIDRs plus ephemeral CI runner IPs).
+    # CIDR-scoped UFW rules would block scanner runners that are only added to the SG.
+    - name: Allow SSH port in UFW
+      ansible.builtin.command: "ufw allow 22/tcp"
+      changed_when: true
+
+    - name: Allow Spring app port in UFW
+      ansible.builtin.command: "ufw allow {{ app_port }}/tcp"
+      changed_when: true
+
+    - name: Allow Keycloak port in UFW
+      ansible.builtin.command: "ufw allow {{ keycloak_port }}/tcp"
+      changed_when: true
+
+    - name: Enable UFW
+      ansible.builtin.command: ufw --force enable
+      changed_when: true
+
+    - name: Create Docker keyring directory
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Add Docker apt key
+      ansible.builtin.get_url:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        mode: "0644"
+
+    - name: Add Docker apt repository
+      ansible.builtin.apt_repository:
+        repo: >-
+          deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc]
+          https://download.docker.com/linux/ubuntu
+          {{ ansible_distribution_release }} stable
+        filename: docker
+        state: present
+
+    - name: Install Docker Engine and Compose plugin
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+        update_cache: true
+
+    - name: Ensure Docker service is enabled
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Add ubuntu user to docker group
+      ansible.builtin.user:
+        name: ubuntu
+        groups: docker
+        append: true
+
+    - name: Create application directory
+      ansible.builtin.file:
+        path: "{{ app_dir }}"
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: "0755"
+
+    - name: Copy application sources
+      ansible.builtin.copy:
+        src: "{{ app_source_dir }}/"
+        dest: "{{ app_dir }}/"
+        owner: ubuntu
+        group: ubuntu
+        mode: preserve
+
+    - name: Ensure dev-env stamp exists for Docker build
+      ansible.builtin.file:
+        path: "{{ app_dir }}/app/.dev-env-stamp"
+        state: touch
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
+        modification_time: preserve
+        access_time: preserve
+
+    - name: Install AWS docker compose file
+      ansible.builtin.template:
+        src: docker-compose.aws.yml.j2
+        dest: "{{ app_dir }}/docker-compose.aws.yml"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
+
+    - name: Build and start application stack
+      ansible.builtin.command:
+        cmd: docker compose -f docker-compose.aws.yml up -d --build
+        chdir: "{{ app_dir }}"
+      changed_when: true
+
+    - name: Wait for Spring OpenAPI endpoint
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ app_port }}/v3/api-docs"
+        status_code: 200
+      register: openapi_check
+      retries: 60
+      delay: 10
+      until: openapi_check.status == 200
+
+    - name: Confirm application is healthy
+      ansible.builtin.debug:
+        msg: "Spring OpenAPI endpoint responded HTTP 200 on the instance loopback interface."
+
+  handlers:
+    - name: Restart ssh
+      ansible.builtin.service:
+        name: ssh
+        state: reloaded
+
+    - name: Restart fail2ban
+      ansible.builtin.service:
+        name: fail2ban
+        state: restarted
