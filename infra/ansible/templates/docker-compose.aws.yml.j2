@@ -21,11 +21,12 @@ services:
     command:
       - "start-dev"
       - "--import-realm"
-      # Use the Docker-network hostname so the OIDC discovery issuer matches what
-      # Spring is configured with. Browser HTML login via the public IP may need
-      # extra Keycloak hostname config later; API scanning does not.
-      - "--hostname=http://keycloak:8080"
+      # Browser-facing URL (team + scanners hitting the public EIP).
+      - "--hostname=http://{{ public_host }}:{{ keycloak_port }}"
       - "--hostname-strict=false"
+      # Allow the Spring app to call Keycloak as http://keycloak:8080 on the
+      # Docker network without hairpin NAT to the public EIP.
+      - "--hostname-backchannel-dynamic=true"
       - "--http-enabled=true"
     environment:
       KEYCLOAK_ADMIN: admin
@@ -51,10 +52,11 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       SPRING_PROFILES_ACTIVE: docker
-      # Must match Keycloak's discovery "issuer" (see hostname above). Do not use
-      # the public EIP here: EC2 hairpin NAT is unreliable and Spring fails startup
-      # when the configured issuer-uri does not match the discovery document.
-      SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KEYCLOAK_ISSUER_URI: "http://keycloak:8080/realms/test-realm"
+      # Browser redirects use the public host; server-side token/JWKS use Docker DNS.
+      KEYCLOAK_AUTH_URI: "http://{{ public_host }}:{{ keycloak_port }}/realms/test-realm/protocol/openid-connect/auth"
+      KEYCLOAK_TOKEN_URI: "http://keycloak:8080/realms/test-realm/protocol/openid-connect/token"
+      KEYCLOAK_USERINFO_URI: "http://keycloak:8080/realms/test-realm/protocol/openid-connect/userinfo"
+      KEYCLOAK_JWK_URI: "http://keycloak:8080/realms/test-realm/protocol/openid-connect/certs"
       # Give the JVM a bit more room on t3.small alongside Keycloak + Postgres.
       JAVA_TOOL_OPTIONS: "-Xms256m -Xmx512m"
     restart: unless-stopped

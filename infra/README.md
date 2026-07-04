@@ -8,6 +8,19 @@ EC2 security groups give precise CIDR allowlists for SSH and app ports, which is
 
 Default size is **`t3.small` (2 GiB)** — about **$15/month** on-demand in `us-east-1`. That is the practical minimum for Postgres + Keycloak + Spring under Docker. The root volume is encrypted **gp3**.
 
+### Cost components (us-east-1, always-on)
+
+| Component | Typical cost | Notes |
+|-----------|--------------|--------|
+| EC2 `t3.small` | ~$12–15/mo | Main cost driver |
+| EBS gp3 20 GiB | ~$1.60/mo | Root volume |
+| Elastic IP | **$0** while attached | Charged only if allocated and **not** associated with a running instance |
+| S3 state bucket | cents/mo | Tiny tfstate + occasional scan PDFs |
+| SSM parameters | free tier / negligible | Standard parameters |
+| Data transfer | usually low | Outbound to internet; scans are modest |
+
+**Ballpark: ~$14–17/month** with the instance running 24/7. No NAT Gateway, Load Balancer, RDS, or other high-cost services. Destroy the stack when idle (`action=destroy`) to stop EC2/EBS charges; release the EIP with destroy so you are not billed for an idle address.
+
 ## One-time GitHub setup
 
 Repository **Secrets**:
@@ -61,14 +74,15 @@ Both commands must succeed before the workflow will.
 
 Each `deploy`:
 
-1. Merges `ALLOWED_CIDRS` with the current runner’s `/32`
-2. Runs Terraform (`-replace` on the instance when one already exists; Elastic IP is kept)
-3. Runs Ansible (UFW, fail2ban, SSH hardening, unattended upgrades, Docker, compose up)
-4. Writes instance details to **private AWS SSM** parameters under `/capstone-spring/*` (not to public GitHub logs or variables)
+1. Applies Terraform with **team CIDRs only** (`ALLOWED_CIDRS`) in the security group
+2. Temporarily allowlists **this deploy runner** for SSH/app ports, runs Ansible, then revokes that runner IP
+3. Writes instance details to **private AWS SSM** under `/capstone-spring/*`
 
 ### `Capstone Vulnerability Scan`
 
-Loads the app URL and security group ID from SSM. Before scanning it temporarily authorizes the runner IP on the instance security group, then revokes it afterward. PDF reports go to the private Terraform state bucket under `scan-reports/` (not public Actions artifacts).
+Loads the app URL and security group ID from SSM. Temporarily allowlists **the scanner runner** (ports 8080/8081), runs the scan, then revokes that IP. PDF reports go to the private state bucket under `scan-reports/`.
+
+CI runners are never left permanently in the security group—only team IPs from `ALLOWED_CIDRS` persist.
 
 ## Public repository and log exposure
 

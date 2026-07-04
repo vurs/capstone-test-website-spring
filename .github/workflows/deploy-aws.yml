@@ -94,20 +94,19 @@ jobs:
           fi
           echo "action=$ACTION" >> "$GITHUB_OUTPUT"
 
-      - name: Build allowlist CIDRs (team + current runner)
+      - name: Build team allowlist CIDRs
         id: cidrs
         run: |
           set -euo pipefail
+          # Permanent SG rules are team IPs only. This deploy runner and the scanner
+          # runner are allowlisted ephemerally for the duration of their jobs.
           RUNNER_IP="$(curl -fsSL https://api.ipify.org)"
           echo "::add-mask::$RUNNER_IP"
           echo "::add-mask::${RUNNER_IP}/32"
+          echo "runner_cidr=${RUNNER_IP}/32" >> "$GITHUB_OUTPUT"
 
-          # Normalize team CIDRs from the secret (already masked by Actions).
           TEAM_CIDRS="$(echo '${{ secrets.ALLOWED_CIDRS }}' | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | grep -v '^$')"
-          {
-            echo "$TEAM_CIDRS"
-            echo "${RUNNER_IP}/32"
-          } | sort -u > "$RUNNER_TEMP/allowed_cidrs.txt"
+          echo "$TEAM_CIDRS" | sort -u > "$RUNNER_TEMP/allowed_cidrs.txt"
 
           if grep -qx '0.0.0.0/0' "$RUNNER_TEMP/allowed_cidrs.txt" || grep -qx '::/0' "$RUNNER_TEMP/allowed_cidrs.txt"; then
             echo "ALLOWED_CIDRS must not include 0.0.0.0/0 or ::/0."
@@ -120,8 +119,7 @@ jobs:
           import os
           cidrs = Path(os.environ["RUNNER_TEMP"], "allowed_cidrs.txt").read_text().splitlines()
           Path(os.environ["RUNNER_TEMP"], "allowed_cidrs.json").write_text(json.dumps(cidrs))
-          # Do not print CIDRs; team entries are secrets and the runner IP is ephemeral.
-          print(f"Allowlist prepared ({len(cidrs)} CIDR entr(y/ies)).")
+          print(f"Team allowlist prepared ({len(cidrs)} CIDR entr(y/ies)).")
           PY
 
       - name: Ensure Terraform state bucket
@@ -484,6 +482,24 @@ jobs:
           put_param "$PREFIX/region" "$AWS_REGION" String
           echo "Wrote deployment details to SSM under $PREFIX/* (SecureString where sensitive)."
 
+      - name: Allow this deploy runner on the application security group
+        if: steps.meta.outputs.action == 'deploy' && steps.tf.outputs.has_outputs == 'true'
+        env:
+          SG_ID: ${{ steps.tf.outputs.security_group_id }}
+          CIDR: ${{ steps.cidrs.outputs.runner_cidr }}
+        run: |
+          set -euo pipefail
+          # Ephemeral access for Ansible only. Team CIDRs stay in Terraform;
+          # the scanner workflow allowlists its own runner the same way.
+          for PORT in 22 8080 8081; do
+            aws ec2 authorize-security-group-ingress \
+              --group-id "$SG_ID" \
+              --protocol tcp \
+              --port "$PORT" \
+              --cidr "$CIDR" \
+              2>/dev/null || echo "Port $PORT already allowed for this deploy runner"
+          done
+
       - name: Setup Python for Ansible
         if: steps.meta.outputs.action == 'deploy'
         uses: actions/setup-python@v5
@@ -570,6 +586,22 @@ jobs:
         env:
           ANSIBLE_HOST_KEY_CHECKING: "False"
           PUBLIC_IP: ${{ steps.tf.outputs.public_ip }}
+
+      - name: Revoke this deploy runner from the application security group
+        if: always() && steps.meta.outputs.action == 'deploy' && steps.tf.outputs.has_outputs == 'true'
+        env:
+          SG_ID: ${{ steps.tf.outputs.security_group_id }}
+          CIDR: ${{ steps.cidrs.outputs.runner_cidr }}
+        run: |
+          set -euo pipefail
+          for PORT in 22 8080 8081; do
+            aws ec2 revoke-security-group-ingress \
+              --group-id "$SG_ID" \
+              --protocol tcp \
+              --port "$PORT" \
+              --cidr "$CIDR" \
+              2>/dev/null || echo "Port $PORT rule for this deploy runner already absent"
+          done
 
       - name: Clear SSM parameters after destroy
         if: steps.meta.outputs.action == 'destroy'
