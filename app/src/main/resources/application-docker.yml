@@ -19,8 +19,14 @@ spring:
 
         provider:
           keycloak:
+            # Explicit endpoints (no issuer-uri) so AWS can send browsers to the
+            # public Keycloak URL while the app uses the Docker-network hostname
+            # for token/JWKS calls. Defaults suit local docker compose.
+            authorization-uri: ${KEYCLOAK_AUTH_URI:http://host.docker.internal:8080/realms/test-realm/protocol/openid-connect/auth}
+            token-uri: ${KEYCLOAK_TOKEN_URI:http://host.docker.internal:8080/realms/test-realm/protocol/openid-connect/token}
+            user-info-uri: ${KEYCLOAK_USERINFO_URI:http://host.docker.internal:8080/realms/test-realm/protocol/openid-connect/userinfo}
+            jwk-set-uri: ${KEYCLOAK_JWK_URI:http://host.docker.internal:8080/realms/test-realm/protocol/openid-connect/certs}
             user-name-attribute: preferred_username
-            issuer-uri: http://host.docker.internal:8080/realms/test-realm
 
   application:
     name: capstone-test-website-spring
