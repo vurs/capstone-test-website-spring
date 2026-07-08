@@ -32,6 +32,7 @@ public class SecurityConfig {
                         .requestMatchers(PathRequest.toStaticResources().atCommonLocations()).permitAll()
                         .requestMatchers("/").permitAll()
                         .requestMatchers("/csrf-demo", "/csrf-demo/**").permitAll()
+                        .requestMatchers("/clickjacking-demo", "/clickjacking-demo/**").permitAll()
                         .requestMatchers("/unsafe-forms/**").permitAll()
                         .requestMatchers(
                                 "/admin", "/admin/",
