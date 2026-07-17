@@ -60,7 +60,11 @@ public class SecurityConfig {
                                 // Permit so the controller can return 401 JSON instead of a Keycloak redirect.
                                 "/api/session/me",
                                 "/users/**",
-                                "/network/**"
+                                "/network/**",
+                                // Allow anonymous clients to observe real 500 bodies from
+                                // injectable endpoints (otherwise Spring Security redirects
+                                // /error to OAuth and hides SQLi error signals).
+                                "/error"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )
