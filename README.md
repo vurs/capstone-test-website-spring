@@ -101,10 +101,14 @@ python main.py http://127.0.0.1:8081 \
   --openapi-url /v3/api-docs \
   --auth-api-url /api/auth/login \
   --auth-field username=testuser \
-  --auth-field password=password
+  --auth-field password=password \
+  --auth-session-probe-url /api/session/me \
+  --auth-session-probe-json-field username
 ```
 
 `POST /api/auth/login` accepts `{"username":"testuser","password":"password"}` and returns a session cookie. This is separate from Keycloak and exists only to support scanner authentication testing.
+
+`GET /api/session/me` is the session probe: it returns `{"username":"..."}` when logged in and `401` when logged out, so the scanner can re-authenticate mid-scan.
 
 **Automated regression test** (from the scanner repo, with this app running):
 
@@ -166,7 +170,7 @@ The following features are in progress:
 
 * **Traditional HTML sites** work best with HTTP crawl mode.
 * **SPAs** require browser crawl mode to discover client-rendered routes and hash-based navigation (for example `#/about`). REST API endpoints are discovered via seeds, query parameters, browser network capture, and OpenAPI specs; injection runs against those endpoints separately from HTML forms.
-* **Session probing** is opt-in. Targets with authenticated scans should expose a probe endpoint (for example `/api/session/me`) that returns `401`/`403` when logged out, or configure `--auth-session-probe-json-field` when the probe returns `200` for both states.
+* **Session probing** is opt-in. This app exposes `GET /api/session/me` (returns `401` when logged out, or `{"username":"..."}` when logged in). Configure `--auth-session-probe-url /api/session/me` and optionally `--auth-session-probe-json-field username`.
 * **Browser mode** requires Selenium and Chrome. Overlays, cookie banners, and heavy client-side rendering can still limit link discovery on some apps.
 
 ### Links to Relevant Documentation, Diagrams, and Demos
