@@ -57,6 +57,8 @@ public class SecurityConfig {
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
                                 "/api/auth/login",
+                                // Permit so the controller can return 401 JSON instead of a Keycloak redirect.
+                                "/api/session/me",
                                 "/users/**",
                                 "/network/**"
                         ).permitAll()
