@@ -25,6 +25,14 @@
             <li class="nav-item"><a href="/csrf-demo" class="nav-link">CSRF Demo</a></li>
             <li class="nav-item"><a href="/clickjacking-demo" class="nav-link">Clickjacking Demo</a></li>
             <li class="nav-item"><a href="#" class="nav-link">About</a></li>
+            <li class="nav-item me-4" th:if="${!isAuthenticated}">
+                <a href="/login" class="nav-link">Login</a>
+            </li>
+            <li class="nav-item me-4" th:if="${isAuthenticated}">
+                <form th:action="@{/logout}" method="post">
+                    <button type="submit" class="nav-link border-0 bg-transparent">Logout</button>
+                </form>
+            </li>
         </ul>
     </header>
 </div>

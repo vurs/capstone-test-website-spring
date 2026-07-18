@@ -3,7 +3,6 @@ package com.capstone.security;
 import org.springframework.boot.security.autoconfigure.web.servlet.PathRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.web.SecurityFilterChain;
@@ -30,7 +29,7 @@ public class SecurityConfig {
                 ))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PathRequest.toStaticResources().atCommonLocations()).permitAll()
-                        .requestMatchers("/").permitAll()
+                        .requestMatchers("/", "/login").permitAll()
                         .requestMatchers("/csrf-demo", "/csrf-demo/**").permitAll()
                         .requestMatchers("/clickjacking-demo", "/clickjacking-demo/**").permitAll()
                         .requestMatchers("/unsafe-forms/**").permitAll()
@@ -75,7 +74,8 @@ public class SecurityConfig {
                 // Intentionally disable Spring Security's default header writer so the
                 // vulnerable test app exposes missing security headers to the scanner.
                 .headers(headers -> headers.disable())
-                .oauth2Login(Customizer.withDefaults()); // login with Keycloak
+                .oauth2Login(oauth2 -> oauth2.loginPage("/login")) // login with Keycloak
+                .logout(logout -> logout.logoutSuccessUrl("/"));
 
         return http.build();
     }
