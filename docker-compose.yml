@@ -12,11 +12,11 @@ services:
       - "5432:5432"
 
   keycloak:
-    image: quay.io/keycloak/keycloak:latest
+    image: quay.io/keycloak/keycloak:26.6.1
     command:
       - "start-dev"
       - "--import-realm"
-      - "--hostname=host.docker.internal"
+      - "--hostname=http://host.docker.internal:8080"
       - "--hostname-strict=false"
       - "--http-enabled=true"
     environment:
@@ -34,6 +34,9 @@ services:
       - "8081:8081"
     depends_on:
       - db
+      - keycloak
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       SPRING_PROFILES_ACTIVE: docker
 

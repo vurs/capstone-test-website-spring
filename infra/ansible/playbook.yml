@@ -1,0 +1,276 @@
+---
+- name: Harden host and deploy Capstone Spring test app
+  hosts: app
+  become: true
+  vars:
+    app_dir: /opt/capstone-spring
+    public_host: "{{ public_ip }}"
+    app_port: 8081
+    keycloak_port: 8080
+
+  tasks:
+    - name: Wait for cloud-init to finish
+      ansible.builtin.command: cloud-init status --wait
+      changed_when: false
+      failed_when: false
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install base packages
+      ansible.builtin.apt:
+        name:
+          - ufw
+          - fail2ban
+          - unattended-upgrades
+          - apt-listchanges
+          - curl
+          - ca-certificates
+          - gnupg
+        state: present
+
+    - name: Configure unattended upgrades
+      ansible.builtin.copy:
+        dest: /etc/apt/apt.conf.d/20auto-upgrades
+        mode: "0644"
+        content: |
+          APT::Periodic::Update-Package-Lists "1";
+          APT::Periodic::Unattended-Upgrade "1";
+          APT::Periodic::AutocleanInterval "7";
+
+    - name: Harden SSH daemon
+      ansible.builtin.blockinfile:
+        path: /etc/ssh/sshd_config
+        marker: "# {mark} CAPSTONE HARDENING"
+        block: |
+          PasswordAuthentication no
+          KbdInteractiveAuthentication no
+          ChallengeResponseAuthentication no
+          PermitRootLogin no
+          X11Forwarding no
+          AllowTcpForwarding no
+          AllowUsers ubuntu
+          AuthenticationMethods publickey
+      notify: Restart ssh
+
+    - name: Configure fail2ban for SSH
+      ansible.builtin.copy:
+        dest: /etc/fail2ban/jail.d/sshd.local
+        mode: "0644"
+        content: |
+          [sshd]
+          enabled = true
+          port = ssh
+          filter = sshd
+          logpath = /var/log/auth.log
+          maxretry = 5
+          bantime = 1h
+      notify: Restart fail2ban
+
+    - name: Reset and configure UFW defaults
+      ansible.builtin.shell: |
+        set -euo pipefail
+        ufw --force reset
+        ufw default deny incoming
+        ufw default allow outgoing
+      args:
+        executable: /bin/bash
+      changed_when: true
+
+    # Port allow rules are intentionally not CIDR-scoped in UFW. The EC2 security
+    # group is the source-IP allowlist (team CIDRs plus ephemeral CI runner IPs).
+    # CIDR-scoped UFW rules would block scanner runners that are only added to the SG.
+    - name: Allow SSH port in UFW
+      ansible.builtin.command: "ufw allow 22/tcp"
+      changed_when: true
+
+    - name: Allow Spring app port in UFW
+      ansible.builtin.command: "ufw allow {{ app_port }}/tcp"
+      changed_when: true
+
+    - name: Allow Keycloak port in UFW
+      ansible.builtin.command: "ufw allow {{ keycloak_port }}/tcp"
+      changed_when: true
+
+    - name: Enable UFW
+      ansible.builtin.command: ufw --force enable
+      changed_when: true
+
+    - name: Create Docker keyring directory
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Add Docker apt key
+      ansible.builtin.get_url:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        mode: "0644"
+
+    - name: Add Docker apt repository
+      ansible.builtin.apt_repository:
+        repo: >-
+          deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc]
+          https://download.docker.com/linux/ubuntu
+          {{ ansible_distribution_release }} stable
+        filename: docker
+        state: present
+
+    - name: Install Docker Engine and Compose plugin
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+        state: present
+        update_cache: true
+
+    - name: Ensure Docker service is enabled
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Add ubuntu user to docker group
+      ansible.builtin.user:
+        name: ubuntu
+        groups: docker
+        append: true
+
+    - name: Create application directory
+      ansible.builtin.file:
+        path: "{{ app_dir }}"
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: "0755"
+
+    - name: Copy application sources
+      ansible.builtin.copy:
+        src: "{{ app_source_dir }}/"
+        dest: "{{ app_dir }}/"
+        owner: ubuntu
+        group: ubuntu
+        mode: preserve
+
+    - name: Ensure dev-env stamp exists for Docker build
+      ansible.builtin.file:
+        path: "{{ app_dir }}/app/.dev-env-stamp"
+        state: touch
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
+        modification_time: preserve
+        access_time: preserve
+
+    - name: Install AWS docker compose file
+      ansible.builtin.template:
+        src: docker-compose.aws.yml.j2
+        dest: "{{ app_dir }}/docker-compose.aws.yml"
+        owner: ubuntu
+        group: ubuntu
+        mode: "0644"
+
+    - name: Build and start application stack
+      ansible.builtin.command:
+        cmd: docker compose -f docker-compose.aws.yml up -d --build
+        chdir: "{{ app_dir }}"
+      changed_when: true
+
+    # Keycloak must import the realm before Spring can resolve the OIDC issuer.
+    - name: Wait for Keycloak OIDC discovery
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ keycloak_port }}/realms/test-realm/.well-known/openid-configuration"
+        status_code: 200
+        return_content: false
+      register: keycloak_ready
+      retries: 24
+      delay: 5
+      until: keycloak_ready is succeeded
+      ignore_errors: true
+
+    # Recreate the app container after Keycloak is actually ready so Spring's
+    # startup-time issuer fetch does not race Keycloak realm import.
+    - name: Restart Spring app after Keycloak is ready
+      when: keycloak_ready is succeeded
+      ansible.builtin.command:
+        cmd: docker compose -f docker-compose.aws.yml up -d --force-recreate --no-deps app
+        chdir: "{{ app_dir }}"
+      register: app_recreate
+      ignore_errors: true
+
+    # curl tolerates connection-reset during JVM startup better than a single uri probe.
+    # Budget: ~2 minutes after recreate (24 * 5s).
+    - name: Wait for Spring OpenAPI endpoint
+      when: keycloak_ready is succeeded and app_recreate is succeeded
+      ansible.builtin.command:
+        cmd: >-
+          curl -fsS --max-time 5
+          http://127.0.0.1:{{ app_port }}/v3/api-docs
+          -o /dev/null
+      register: openapi_check
+      retries: 24
+      delay: 5
+      until: openapi_check.rc == 0
+      changed_when: false
+      ignore_errors: true
+
+    - name: Collect container diagnostics when the stack is not ready
+      when: >-
+        keycloak_ready is failed
+        or app_recreate is failed
+        or openapi_check is failed
+        or openapi_check is skipped
+      ansible.builtin.shell: |
+        set -euo pipefail
+        echo "=== docker compose ps ==="
+        docker compose -f docker-compose.aws.yml ps -a
+        echo "=== app logs (tail) ==="
+        docker compose -f docker-compose.aws.yml logs --tail=120 app || true
+        echo "=== keycloak logs (tail) ==="
+        docker compose -f docker-compose.aws.yml logs --tail=60 keycloak || true
+        echo "=== db logs (tail) ==="
+        docker compose -f docker-compose.aws.yml logs --tail=20 db || true
+        echo "=== free memory ==="
+        free -h || true
+      args:
+        chdir: "{{ app_dir }}"
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Fail when OpenAPI did not become ready
+      when: >-
+        keycloak_ready is failed
+        or app_recreate is failed
+        or openapi_check is failed
+        or openapi_check is skipped
+      ansible.builtin.fail:
+        msg: >-
+          Application stack was not ready within the wait budget
+          (keycloak={{ 'ok' if keycloak_ready is succeeded else 'failed' }},
+          app_recreate={{ 'ok' if app_recreate is succeeded else ('skipped' if app_recreate is skipped else 'failed') }},
+          openapi={{ 'ok' if openapi_check is succeeded else ('skipped' if openapi_check is skipped else 'failed') }}).
+          Container diagnostics were printed in the previous task.
+
+
+    - name: Confirm application is healthy
+      ansible.builtin.debug:
+        msg: "Spring OpenAPI endpoint responded HTTP 200 on the instance loopback interface."
+
+
+
+  handlers:
+    - name: Restart ssh
+      ansible.builtin.service:
+        name: ssh
+        state: reloaded
+
+    - name: Restart fail2ban
+      ansible.builtin.service:
+        name: fail2ban
+        state: restarted

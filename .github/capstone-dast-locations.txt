@@ -1,0 +1,3 @@
+# Capstone DAST location manifest.
+# Overwritten automatically by the Capstone vulnerability scan workflow.
+# Each line corresponds to one SARIF alert location.

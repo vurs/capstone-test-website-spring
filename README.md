@@ -31,6 +31,19 @@ The masking sample routes and existing exposed config routes include fake sensit
 
 For report-level masking checks, the strongest fixtures are `/error/php-error?session_id=php-url-session-mask-test&api_key=php-url-api-key-mask-test&token=php-url-token-mask-test` and `/api/error/users?session_id=api-url-session-mask-test&api_key=api-url-api-key-mask-test&token=api-url-token-mask-test`. These routes should produce error exposure findings with maskable values in both the finding URL and response evidence.
 
+### AWS deployment (GitHub Actions)
+
+The app can be deployed to a hardened, low-cost EC2 instance from GitHub Actions. Terraform provisions (or replaces) the VM; Ansible hardens the host and starts the Docker stack. See [infra/README.md](infra/README.md) for secrets, IAM, and tear-down instructions.
+
+Quick use:
+
+1. Set secrets `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and `ALLOWED_CIDRS` (team public IPs as `/32` CIDRs — never `0.0.0.0/0`).
+2. Run **Actions → Deploy Spring App to AWS → deploy** to create/replace the instance.
+3. Run **Actions → Deploy Spring App to AWS → destroy** to tear down without recreating.
+4. Instance details are stored in private AWS SSM (not in public Actions logs). Read them with AWS credentials — see [infra/README.md](infra/README.md).
+
+Because this repository is public, Actions logs are world-readable; the deploy/scan workflows mask sensitive values and avoid publishing IPs or URLs in the job summary.
+
 ### Project Overview
 
 Our team is building a Dynamic Application Security Testing (DAST) tool to perform automated scans of web applications, inject crafted payloads, identify web vulnerabilities, and generate user-friendly reports that explain the found vulnerabilities and offer remediation recommendations.
@@ -62,6 +75,55 @@ We aim to produce a desktop application for the scanner, where developers can ma
 3. Visit localhost:8081 in your browser to access the website
 4. All pages of the website (minus the landing page) are login-protected. If prompted to login, use the sample user (Username is "testuser" and password is "password")
 
+#### API-only scanner testing
+
+The app exposes OpenAPI docs and scanner-friendly REST endpoints on the same port (`8081`) as the HTML site. No separate API server is required.
+
+**OpenAPI spec:** `http://127.0.0.1:8081/v3/api-docs`
+
+**Injectable REST endpoints (intentionally vulnerable):**
+
+| Method | Path | Parameter | Vulnerability |
+|--------|------|-----------|---------------|
+| GET | `/users/search` | `username` (query) | SQL injection |
+| GET | `/users/profile` | `userId` (query) | Broken access control (IDOR) |
+| GET | `/network/ping` | `host` (query) | Command injection |
+
+These routes are open without Keycloak so the vulnerability scanner can reach them in `--scan-profile api` mode. HTML pages and other routes still use Keycloak login.
+
+**Unauthenticated API-only scan** (from the scanner repo):
+
+```
+python main.py http://127.0.0.1:8081 \
+  --scan-profile api \
+  --openapi-url /v3/api-docs
+```
+
+**Authenticated API-only scan** (optional JSON login for scanner tooling):
+
+```
+python main.py http://127.0.0.1:8081 \
+  --scan-profile api \
+  --openapi-url /v3/api-docs \
+  --auth-api-url /api/auth/login \
+  --auth-field username=testuser \
+  --auth-field password=password \
+  --auth-session-probe-url /api/session/me \
+  --auth-session-probe-json-field username
+```
+
+`POST /api/auth/login` accepts `{"username":"testuser","password":"password"}` and returns a session cookie. This is separate from Keycloak and exists only to support scanner authentication testing.
+
+`GET /api/session/me` is the session probe: it returns `{"username":"..."}` when logged in and `401` when logged out, so the scanner can re-authenticate mid-scan.
+
+**Automated regression test** (from the scanner repo, with this app running):
+
+```
+pytest --run-integration tests/integration/test_openapi_api_scan.py
+```
+
+Or: `python dev_scripts/verify_spring_api_scan.py`
+
 #### How to Shut Down
 
 1. If you would like database data to persist, run "docker compose down"
@@ -74,36 +136,48 @@ On macOS, you may run into an issue where your browser cannot resolve "host.dock
     * 127.0.0.1       host.docker.internal
 2. Run the following CLI command to flush your DNS cache:
    * sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder
+  
+On Windows, you may run into an issue where your browser cannot resolve "host.docker.internal", thus breaking all Keycloak functionality. To fix this, you need to do the following:
+1. Add the following line to the bottom of your C:\Windows\System32\drivers\etc\hosts file, and delete the other entry for host.docker.internal:
+    * 127.0.0.1 host.docker.internal
+2. Save the file and retry the application
 
 ### Current Project Status
 
 The following features have been created so far:
-* Scanner Phase 1: Crawler/Spider
+
+* Scanner Phase 1: Crawler/Spider (HTTP and browser/Selenium modes)
 * Scanner Phase 2: Payload Injector
 * Scanner Phase 3: Vulnerability Verifier
 * Scanner Phase 4: Report Generator
 * Reflected and Stored XSS payloads
-* Vulnerable Test Web Application to test scanner against
-* Authentication mechanism for vulnerability scanner
-* Base desktop application for vulnerability scanner
-* SQLi payloads (differential and error-based detection)
+* SQL injection payloads (differential and error-based detection)
 * Command injection payloads
-* Security misconfiguration checks
-* Browser-based crawler for SPA / client-rendered discovery (Selenium + headless Chrome)
-* Configurable crawl modes (`http`, `browser`, `both`) in the CLI and desktop UI
+* Security header misconfiguration checks
+* Broken access control checks (IDOR on `/users/profile`)
+* Exposed directories and files checks (on a feature branch)
+* Vulnerable test web application to test scanner against
+* Authentication for HTML form login and JSON API login (SPA-friendly)
+* Session probe-based re-authentication
+* Hash-route aware browser crawling for SPAs
+* Base desktop application for vulnerability scanner
 
 ### Features Still in Progress
 
 The following features are in progress:
-* Additional payloads (Broken Access Control, Exposed Directories and Files, Buffer Overflow, No Anti-CSRF Tokens, etc.)
+
+* Additional payloads (Buffer Overflow, No Anti-CSRF Tokens, etc.)
 * Increased desktop application functionality for vulnerability scanner
-* GitHub Actions Workflow for vulnerability scanner
+* GitHub Actions Workflow for vulnerability scanner (allows scans to be run on a schedule or for important events such as PRs)
+* REST/API endpoint discovery for SPA backends (Juice Shop seeds, query-param URLs, browser network capture, OpenAPI)
+* API injection for SQLi, XSS, and command injection on discovered REST endpoints
 
 ### Known Issues and Limitations
 
-* **HTTP crawl mode** only discovers links and forms present in raw HTML responses; it does not execute client-side JavaScript.
-* **Browser crawl mode** improves discovery for SPAs (for example Angular or React), but coverage depends on how the app renders navigation, uses hash-based routing, or gates content behind complex client-side flows. Use `both` when you want traditional link discovery plus rendered-page exploration.
-* Browser and `both` modes require Google Chrome and a working Selenium/Chrome setup on the machine running the scan.
+* **Traditional HTML sites** work best with HTTP crawl mode.
+* **SPAs** require browser crawl mode to discover client-rendered routes and hash-based navigation (for example `#/about`). REST API endpoints are discovered via seeds, query parameters, browser network capture, and OpenAPI specs; injection runs against those endpoints separately from HTML forms.
+* **Session probing** is opt-in. This app exposes `GET /api/session/me` (returns `401` when logged out, or `{"username":"..."}` when logged in). Configure `--auth-session-probe-url /api/session/me` and optionally `--auth-session-probe-json-field username`.
+* **Browser mode** requires Selenium and Chrome. Overlays, cookie banners, and heavy client-side rendering can still limit link discovery on some apps.
 
 ### Links to Relevant Documentation, Diagrams, and Demos
 
