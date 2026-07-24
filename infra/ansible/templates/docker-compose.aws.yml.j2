@@ -57,6 +57,7 @@ services:
       KEYCLOAK_TOKEN_URI: "http://keycloak:8080/realms/test-realm/protocol/openid-connect/token"
       KEYCLOAK_USERINFO_URI: "http://keycloak:8080/realms/test-realm/protocol/openid-connect/userinfo"
       KEYCLOAK_JWK_URI: "http://keycloak:8080/realms/test-realm/protocol/openid-connect/certs"
+      KEYCLOAK_LOGOUT_URI: "http://{{ public_host }}:{{ keycloak_port }}/realms/test-realm/protocol/openid-connect/logout"
       # Give the JVM a bit more room on t3.small alongside Keycloak + Postgres.
       JAVA_TOOL_OPTIONS: "-Xms256m -Xmx512m"
     restart: unless-stopped

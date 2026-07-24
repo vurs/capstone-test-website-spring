@@ -60,8 +60,11 @@ The app container waits 30 seconds before starting Spring Boot. When it is ready
 Use `testuser` / `password` for the test account. The local Keycloak administrator
 is `admin` / `admin`.
 
-`/login` goes directly to Keycloak. The homepage displays **Login** for anonymous
-visitors and **Logout** for authenticated users.
+All application routes require authentication except `/login`, the OAuth2 callbacks,
+`/api/auth/login`, `/api/session/me`, and `/error`. Visiting the app redirects
+anonymous browsers to Keycloak. `/login` starts the Keycloak flow directly.
+**Logout** clears both the application session and the Keycloak SSO session, then
+returns to `/login` so the next sign-in prompts for credentials again.
 
 ### 3. Stop or reset
 
@@ -71,7 +74,8 @@ Use `docker compose down` to preserve PostgreSQL data or
 ## Vulnerability test surface
 
 These routes are intentionally unsafe so the scanner can test stable, known
-findings.
+findings. Unless noted below, they require an authenticated session (Keycloak
+browser login or `POST /api/auth/login`).
 
 | Finding | Routes | Intentional behavior |
 |---|---|---|
@@ -82,10 +86,10 @@ findings.
 | Missing anti-CSRF protection | `/csrf-demo`, `/unsafe-forms/**` | Forms omit tokens and their endpoints skip CSRF validation |
 | Clickjacking and missing headers | `/clickjacking-demo` | Spring Security header writers are disabled |
 | Error exposure | `/error/**`, `/api/error/users` | Responses contain stack traces, framework errors, and database errors |
-| Exposed resources | `/admin`, `/backup`, `/uploads`, `/config`, `/.env`, `/config.yml`, backup-like files, and `/.git/config` | Predictable sensitive resources are publicly readable |
-| Data masking | `/masking-samples`, `/masking-samples.txt`, and selected error routes | Responses contain fake passwords, tokens, API keys, session IDs, cookies, and authorization headers |
+| Exposed resources | `/admin`, `/backup`, `/uploads`, `/config`, `/.env`, `/config.yml`, backup-like files, and `/.git/config` | Predictable sensitive resources are readable when authenticated |
+| Data masking | `/masking-demo`, `/masking-samples`, `/masking-samples.txt`, and selected error routes | Responses contain fake passwords, tokens, API keys, session IDs, cookies, and authorization headers |
 
-Useful combined error-exposure and masking fixtures:
+Useful combined error-exposure and masking fixtures (also linked from `/masking-demo`):
 
 ```text
 /error/php-error?session_id=php-url-session-mask-test&api_key=php-url-api-key-mask-test&token=php-url-token-mask-test
@@ -105,7 +109,8 @@ no separate API server is required.
 | `GET` | `/users/profile` | `userId` | Broken access control |
 | `GET` | `/network/ping` | `host` | Command injection |
 
-These endpoints are public so the scanner can reach them in API scan mode.
+These endpoints require authentication. Use Keycloak for browser scans or
+`POST /api/auth/login` for scanner-managed API sessions.
 
 ### Scanner-managed authentication
 

@@ -9,8 +9,6 @@ import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 
-import java.security.Principal;
-
 @Controller
 public class BlogController {
 
@@ -21,8 +19,7 @@ public class BlogController {
     }
 
     @GetMapping("/")
-    public String home(Principal principal, Model model) {
-        model.addAttribute("isAuthenticated", principal != null);
+    public String home() {
         return "index";
     }
 
