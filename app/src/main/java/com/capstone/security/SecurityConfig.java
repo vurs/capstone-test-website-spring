@@ -3,7 +3,6 @@ package com.capstone.security;
 import org.springframework.boot.security.autoconfigure.web.servlet.PathRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.web.SecurityFilterChain;
@@ -13,6 +12,12 @@ import org.springframework.security.web.context.SecurityContextRepository;
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
+
+    private final KeycloakLogoutSuccessHandler keycloakLogoutSuccessHandler;
+
+    public SecurityConfig(KeycloakLogoutSuccessHandler keycloakLogoutSuccessHandler) {
+        this.keycloakLogoutSuccessHandler = keycloakLogoutSuccessHandler;
+    }
 
     @Bean
     public SecurityContextRepository securityContextRepository() {
@@ -30,48 +35,27 @@ public class SecurityConfig {
                 ))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PathRequest.toStaticResources().atCommonLocations()).permitAll()
-                        .requestMatchers("/").permitAll()
-                        .requestMatchers("/csrf-demo", "/csrf-demo/**").permitAll()
-                        .requestMatchers("/clickjacking-demo", "/clickjacking-demo/**").permitAll()
-                        .requestMatchers("/unsafe-forms/**").permitAll()
+                        // Browser login entry and OAuth2 authorization-code callbacks.
                         .requestMatchers(
-                                "/admin", "/admin/",
-                                "/backup", "/backup/",
-                                "/uploads", "/uploads/",
-                                "/config", "/config/",
-                                "/debug-info",
-                                "/.env",
-                                "/config.yml",
-                                "/backup.zip",
-                                "/backup.tar.gz",
-                                "/db_backup.sql",
-                                "/database.sql",
-                                "/site.bak",
-                                "/app.bak",
-                                "/.git/config"
+                                "/login",
+                                "/oauth2/**",
+                                "/login/oauth2/**"
                         ).permitAll()
-                        // OpenAPI spec and scanner-friendly REST endpoints (no Keycloak required).
+                        // Scanner JSON login and session probe (401 JSON, not OAuth redirect).
                         .requestMatchers(
-                                "/v3/api-docs",
-                                "/v3/api-docs/**",
-                                "/swagger-ui/**",
-                                "/swagger-ui.html",
                                 "/api/auth/login",
-                                // Permit so the controller can return 401 JSON instead of a Keycloak redirect.
-                                "/api/session/me",
-                                "/users/**",
-                                "/network/**",
-                                // Allow anonymous clients to observe real 500 bodies from
-                                // injectable endpoints (otherwise Spring Security redirects
-                                // /error to OAuth and hides SQLi error signals).
-                                "/error"
+                                "/api/session/me"
                         ).permitAll()
+                        // Keep /error anonymous so forwarded 500 bodies from injectable
+                        // endpoints remain visible instead of an OAuth redirect.
+                        .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated()
                 )
                 // Intentionally disable Spring Security's default header writer so the
                 // vulnerable test app exposes missing security headers to the scanner.
                 .headers(headers -> headers.disable())
-                .oauth2Login(Customizer.withDefaults()); // login with Keycloak
+                .oauth2Login(oauth2 -> oauth2.loginPage("/login"))
+                .logout(logout -> logout.logoutSuccessHandler(keycloakLogoutSuccessHandler));
 
         return http.build();
     }

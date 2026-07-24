@@ -2,6 +2,12 @@ server:
   port:
     8081
 
+app:
+  keycloak:
+    # Browser-facing end-session URL for RP-initiated logout (must match the
+    # public Keycloak hostname, same as authorization-uri).
+    logout-uri: ${KEYCLOAK_LOGOUT_URI:http://host.docker.internal:8080/realms/test-realm/protocol/openid-connect/logout}
+
 spring:
   security:
     oauth2:
