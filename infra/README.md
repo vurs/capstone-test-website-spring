@@ -123,6 +123,7 @@ Masking is best-effort: unusual log formatting can still leak values. Do not pas
 | OS | Unattended security upgrades |
 | App surface | Postgres is **not** published on the host; only Keycloak `8080` and Spring `8081` |
 | IMDS | IMDSv2 required on the instance |
+| OIDC redirects | Ansible injects `http://<public_ip>:8081/*` into the Keycloak `spring-client` redirect URIs before realm import (Keycloak rejects `http://*:8081/*` as an invalid wildcard host) |
 
 This is not a formal compliance baseline (CIS/STIG), but it blocks unsolicited internet scanning and limits access to your team and CI runners.
 
