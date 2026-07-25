@@ -176,9 +176,58 @@
         group: ubuntu
         mode: "0644"
 
+    # Keycloak does not treat http://*:8081/* as an arbitrary-host match, so the
+    # AWS public EIP must be written into spring-client redirect URIs before
+    # Keycloak imports the realm. Local docker compose keeps localhost only.
+    - name: Inject public host into Keycloak spring-client redirect URIs
+      ansible.builtin.shell: |
+        set -euo pipefail
+        python3 - <<'PY'
+        import json
+        from pathlib import Path
+
+        path = Path("{{ app_dir }}/realm-full-export.json")
+        data = json.loads(path.read_text(encoding="utf-8"))
+        public_origin = "http://{{ public_host }}:{{ app_port }}"
+        local_origin = "http://localhost:{{ app_port }}"
+
+        for client in data.get("clients", []):
+            if client.get("clientId") != "spring-client":
+                continue
+            client["redirectUris"] = [
+                f"{local_origin}/*",
+                f"{public_origin}/*",
+            ]
+            origins = {
+                local_origin,
+                public_origin,
+                "+",
+                *(client.get("webOrigins") or []),
+            }
+            client["webOrigins"] = sorted(origins)
+            attributes = client.setdefault("attributes", {})
+            attributes["post.logout.redirect.uris"] = "+"
+            break
+        else:
+            raise SystemExit("spring-client not found in realm-full-export.json")
+
+        path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        PY
+      args:
+        executable: /bin/bash
+      changed_when: true
+
     - name: Build and start application stack
       ansible.builtin.command:
         cmd: docker compose -f docker-compose.aws.yml up -d --build
+        chdir: "{{ app_dir }}"
+      changed_when: true
+
+    # Recreate Keycloak so --import-realm reloads the patched redirect URIs
+    # even when the Keycloak container was reused from a previous deploy.
+    - name: Recreate Keycloak with the patched realm export
+      ansible.builtin.command:
+        cmd: docker compose -f docker-compose.aws.yml up -d --force-recreate --no-deps keycloak
         chdir: "{{ app_dir }}"
       changed_when: true
 
