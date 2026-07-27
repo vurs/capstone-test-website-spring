@@ -78,7 +78,12 @@ Each `deploy`:
 2. Temporarily allowlists **this deploy runner** for SSH/app ports, runs Ansible, then revokes that runner IP
 3. Writes instance details to **private AWS SSM** under `/capstone-spring/*`
 
-### `Capstone Vulnerability Scan`
+### `Capstone Vulnerability Scan` (`.github/workflows/capstone-vulnerability-scan.yml`)
+
+| Trigger | Behavior |
+|---------|----------|
+| **After successful deploy on push to `main`** (`workflow_run`) | Runs once deploy finishes, so the instance is ready |
+| **Pull request / schedule / manual** | Scans the currently deployed instance |
 
 Loads the app URL and security group ID from SSM. Temporarily allowlists **the scanner runner** (ports 8080/8081), runs the scan, then revokes that IP. PDF reports go to the private state bucket under `scan-reports/`.
 
