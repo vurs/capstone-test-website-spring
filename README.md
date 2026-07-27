@@ -54,7 +54,7 @@ The app container waits 30 seconds before starting Spring Boot. When it is ready
 |---|---|
 | Vulnerable application | <http://localhost:8081> |
 | Browser login | <http://localhost:8081/login> |
-| OpenAPI specification | <http://localhost:8081/v3/api-docs> |
+| OpenAPI specification | <http://localhost:8081/v3/api-docs> (requires authenticated session) |
 | Keycloak administration | <http://localhost:8080> |
 
 Use `testuser` / `password` for the test account. The local Keycloak administrator
@@ -63,6 +63,7 @@ is `admin` / `admin`.
 All application routes require authentication except `/login`, the OAuth2 callbacks,
 `/api/auth/login`, `/api/session/me`, and `/error`. Visiting the app redirects
 anonymous browsers to Keycloak. `/login` starts the Keycloak flow directly.
+Requesting `/v3/api-docs` without a session also redirects to login.
 **Logout** clears both the application session and the Keycloak SSO session, then
 returns to `/login` so the next sign-in prompts for credentials again.
 
@@ -85,8 +86,8 @@ browser login or `POST /api/auth/login`).
 | Command injection | `/network/ping?host=...` | Input is concatenated into a shell command |
 | Missing anti-CSRF protection | `/csrf-demo`, `/unsafe-forms/**` | Forms omit tokens and their endpoints skip CSRF validation |
 | Clickjacking and missing headers | `/clickjacking-demo` | Spring Security header writers are disabled |
-| Error exposure | `/error/**`, `/api/error/users` | Responses contain stack traces, framework errors, and database errors |
-| Exposed resources | `/admin`, `/backup`, `/uploads`, `/config`, `/.env`, `/config.yml`, backup-like files, and `/.git/config` | Predictable sensitive resources are readable when authenticated |
+| Error exposure | `/error/python-stack`, `/error/java-stack`, `/error/php-error`, `/error/database-error`, `/api/error/users`, and related `/error/*` fixtures | Responses contain stack traces, framework errors, and database errors |
+| Exposed resources | `/admin`, `/backup`, `/uploads`, `/config`, `/debug-info`, `/.env`, `/config.yml`, backup-like files, and `/.git/config` | Predictable sensitive resources are readable when authenticated |
 | Data masking | `/masking-demo`, `/masking-samples`, `/masking-samples.txt`, and selected error routes | Responses contain fake passwords, tokens, API keys, session IDs, cookies, and authorization headers |
 
 Useful combined error-exposure and masking fixtures (also linked from `/masking-demo`):
@@ -98,7 +99,7 @@ Useful combined error-exposure and masking fixtures (also linked from `/masking-
 
 All secret-like values returned by this application are fake test fixtures.
 
-## Scanner and API testing
+## Scanner testing
 
 The OpenAPI specification and injectable endpoints are available on port `8081`;
 no separate API server is required.
@@ -126,7 +127,7 @@ Content-Type: application/json
 A successful login sets a session cookie. `GET /api/session/me` returns the
 username for an active session or HTTP `401` when logged out.
 
-Run an authenticated scan with:
+Run an authenticated API-only scan with:
 
 ```bash
 python main.py http://127.0.0.1:8081 \
@@ -138,6 +139,21 @@ python main.py http://127.0.0.1:8081 \
   --auth-session-probe-url /api/session/me \
   --auth-session-probe-json-field username
 ```
+
+For authenticated web scans, use `/login` as the login page URL with the same JSON
+API login so the scanner does not need to drive the Keycloak UI directly:
+
+```bash
+python main.py http://127.0.0.1:8081 http://127.0.0.1:8081/login \
+  --auth-api-url /api/auth/login \
+  --auth-field username=testuser \
+  --auth-field password=password \
+  --auth-session-probe-url /api/session/me \
+  --auth-session-probe-json-field username
+```
+
+Run these commands from the [Capstone vulnerability scanner](https://github.com/vurs/capstone-vulnerability-scanner)
+repository. See its README for scanner profiles, crawl modes, and CI integration.
 
 ## Development
 
